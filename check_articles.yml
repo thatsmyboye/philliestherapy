@@ -1,0 +1,38 @@
+name: Check Athletic RSS
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub Actions cron can drift 1-5 min; fine for this use case.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: # Allow manual trigger from Actions tab
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    # Grant write permission so we can commit updated state back to the repo
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run monitor
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python monitor.py
+
+      - name: Commit updated state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add posted_articles.json
+          git diff --cached --quiet || git commit -m "Update posted articles state"
+          git push
