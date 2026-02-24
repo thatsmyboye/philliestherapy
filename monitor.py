@@ -287,10 +287,22 @@ def run():
 
     state = load_state()
     known_ids = set(state.get("posted_ids", []) + state.get("skipped_ids", []))
+
+    entries = get_rss_entries()
+
+    # First run: seed state with all current articles so we only post
+    # genuinely new ones going forward — no backfill spam.
+    if not known_ids and entries:
+        seed_ids = [article_id(e["url"]) for e in entries]
+        state["skipped_ids"] = seed_ids
+        save_state(state)
+        log.info(f"🌱 First run — seeded {len(seed_ids)} existing articles. Next run will only post new ones.")
+        return
+
     new_posted = []
     new_skipped = []
 
-    for entry in get_rss_entries():
+    for entry in entries:
         aid = article_id(entry["url"])
         if aid in known_ids:
             continue
