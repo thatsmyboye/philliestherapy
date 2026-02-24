@@ -1,11 +1,14 @@
 """
-Athletic Phillies RSS → Discord Webhook
+Athletic Phillies RSS → Discord Webhook (with author lookup)
 
-Monitors The Athletic's Phillies team RSS feed for new articles by
-Matt Gelb and Charlotte Varnes. Posts matches to Discord via webhook.
+The Athletic's Phillies RSS feed has no author data, so:
+  1. Poll the RSS feed for new article URLs
+  2. For each new URL, fetch the article page and extract the author
+     from meta tags / JSON-LD / HTML byline
+  3. If the author matches a watched name, post to Discord
 
-State is tracked in posted_articles.json, committed back to the repo
-by the GitHub Actions workflow after each run.
+This is the hybrid approach: RSS for reliable article discovery,
+a lightweight page fetch for author identification.
 """
 
 import json
@@ -21,6 +24,7 @@ from dataclasses import dataclass
 
 import feedparser
 import requests
+from bs4 import BeautifulSoup
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -28,14 +32,8 @@ import requests
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
-# The Athletic team RSS feeds to check.
-# Run discover_feeds.py locally first to confirm the correct URL.
-RSS_FEEDS = [
-    "https://www.nytimes.com/athletic/rss/mlb/phillies/",
-]
+RSS_FEED = "https://www.nytimes.com/athletic/rss/mlb/phillies/"
 
-# Authors to watch — matched case-insensitively against RSS author fields.
-# Keys are lowercase for matching; values configure the Discord embed.
 WATCHED_AUTHORS = {
     "matt gelb": {
         "display_name": "Matt Gelb",
@@ -51,6 +49,11 @@ STATE_FILE = Path(__file__).parent / "posted_articles.json"
 WEBHOOK_USERNAME = "The Athletic"
 POST_DELAY = 2
 
+USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -59,7 +62,7 @@ log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# State
+# Data
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -73,130 +76,159 @@ class Article:
     image_url: str = ""
 
 
-def load_posted_ids() -> set[str]:
-    if not STATE_FILE.exists():
-        return set()
-    try:
-        data = json.loads(STATE_FILE.read_text())
-        return set(data.get("posted_ids", []))
-    except (json.JSONDecodeError, IOError):
-        return set()
-
-
-def save_posted_ids(ids: set[str]) -> None:
-    STATE_FILE.write_text(json.dumps({
-        "posted_ids": sorted(ids),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }, indent=2))
-
-
 def article_id(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()[:16]
 
 
 # ---------------------------------------------------------------------------
-# RSS
+# State — tracks both posted and skipped articles so we don't re-fetch
+# pages for articles by other authors on every run.
 # ---------------------------------------------------------------------------
 
-def fetch_and_filter(feed_url: str) -> list[Article]:
-    log.info(f"Fetching: {feed_url}")
-    feed = feedparser.parse(feed_url)
+def load_state() -> dict:
+    if not STATE_FILE.exists():
+        return {"posted_ids": [], "skipped_ids": [], "updated_at": ""}
+    try:
+        return json.loads(STATE_FILE.read_text())
+    except (json.JSONDecodeError, IOError):
+        return {"posted_ids": [], "skipped_ids": [], "updated_at": ""}
+
+
+def save_state(state: dict) -> None:
+    state["updated_at"] = datetime.now(timezone.utc).isoformat()
+    STATE_FILE.write_text(json.dumps(state, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# RSS: discover new article URLs
+# ---------------------------------------------------------------------------
+
+def get_rss_entries() -> list[dict]:
+    log.info(f"Fetching RSS: {RSS_FEED}")
+    feed = feedparser.parse(RSS_FEED)
 
     if feed.bozo and not feed.entries:
-        log.error(f"Feed error: {feed.bozo_exception}")
+        log.error(f"RSS error: {feed.bozo_exception}")
         return []
 
-    log.info(f"Feed has {len(feed.entries)} entries")
-    matched: list[Article] = []
+    log.info(f"RSS has {len(feed.entries)} entries")
+    entries = []
 
-    for entry in feed.entries:
-        author_name = _get_author(entry)
-        if not author_name:
+    for e in feed.entries:
+        url = (e.get("link") or "").split("?")[0]
+        if not url:
             continue
 
-        author_config = _match_author(author_name)
-        if not author_config:
+        title = (e.get("title") or "").strip()
+        description = _clean_html(e.get("summary") or e.get("description") or "")
+        published = _parse_published(e)
+
+        image_url = ""
+        if hasattr(e, "media_content") and e.media_content:
+            for m in e.media_content:
+                u = m.get("url", "")
+                if m.get("medium") == "image" or u.lower().endswith(
+                    (".jpg", ".jpeg", ".png", ".webp")
+                ):
+                    image_url = u
+                    break
+        if not image_url and hasattr(e, "media_thumbnail") and e.media_thumbnail:
+            image_url = e.media_thumbnail[0].get("url", "")
+
+        entries.append({
+            "url": url,
+            "title": title,
+            "description": description[:300],
+            "published": published,
+            "image_url": image_url,
+        })
+
+    return entries
+
+
+# ---------------------------------------------------------------------------
+# Author extraction: fetch article page, read meta tags / JSON-LD / byline
+# ---------------------------------------------------------------------------
+
+def extract_author(url: str) -> str | None:
+    """
+    Fetch an article page and extract the author name.
+
+    Tries in order of reliability:
+      1. <meta name="author">
+      2. <meta property="article:author">
+      3. <meta name="dc.creator">
+      4. JSON-LD @type NewsArticle/Article → author field
+      5. HTML byline element (class/attr containing "byline" or "author")
+    """
+    try:
+        resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        log.warning(f"Could not fetch {url}: {e}")
+        return None
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # --- Meta tags ---
+    for selector in [
+        {"name": "author"},
+        {"property": "article:author"},
+        {"name": "dc.creator"},
+        {"property": "og:article:author"},
+    ]:
+        tag = soup.find("meta", attrs=selector)
+        if tag and tag.get("content", "").strip():
+            return tag["content"].strip()
+
+    # --- JSON-LD ---
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string)
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if item.get("@type") in (
+                    "NewsArticle", "Article", "BlogPosting", "ReportageNewsArticle"
+                ):
+                    return _parse_jsonld_author(item.get("author"))
+        except (json.JSONDecodeError, TypeError, AttributeError):
             continue
 
-        url = entry.get("link", "").split("?")[0]
-        title = entry.get("title", "").strip()
-        if not url or not title:
-            continue
+    # --- HTML byline ---
+    for attr in ["class", "data-testid", "itemprop"]:
+        for keyword in ["byline", "author", "AuthorName"]:
+            el = soup.find(attrs={attr: re.compile(keyword, re.I)})
+            if el:
+                text = re.sub(r"^(By\s+)", "", el.get_text(strip=True), flags=re.I)
+                if text and len(text) < 200:
+                    return text
 
-        description = _clean_summary(entry)
-        published = _get_published(entry)
-        image_url = _get_image(entry)
-
-        matched.append(Article(
-            id=article_id(url),
-            url=url,
-            title=title,
-            author=author_config["display_name"],
-            description=description,
-            published=published,
-            image_url=image_url,
-        ))
-
-    log.info(f"Matched {len(matched)} article(s) by watched authors")
-    return matched
-
-
-def _get_author(entry) -> str:
-    if hasattr(entry, "author") and entry.author:
-        return entry.author
-    if hasattr(entry, "authors") and entry.authors:
-        names = [a.get("name", "") for a in entry.authors if a.get("name")]
-        if names:
-            return ", ".join(names)
-    if hasattr(entry, "dc_creator") and entry.dc_creator:
-        return entry.dc_creator
-    return ""
-
-
-def _match_author(author_name: str) -> dict | None:
-    lower = author_name.lower().strip()
-    for key, config in WATCHED_AUTHORS.items():
-        if key in lower or lower in key:
-            return config
+    log.warning(f"No author found for {url}")
     return None
 
 
-def _clean_summary(entry) -> str:
-    text = getattr(entry, "summary", "") or getattr(entry, "description", "")
-    if not text:
-        return ""
-    text = re.sub(r"<[^>]+>", "", text)
-    for old, new in [("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
-                     ("&nbsp;", " "), ("&#39;", "'"), ("&quot;", '"')]:
-        text = text.replace(old, new)
-    text = text.strip()
-    return text[:297] + "..." if len(text) > 300 else text
+def _parse_jsonld_author(author_field) -> str | None:
+    if isinstance(author_field, str):
+        return author_field
+    if isinstance(author_field, dict):
+        return author_field.get("name")
+    if isinstance(author_field, list):
+        names = [
+            a.get("name", "") if isinstance(a, dict) else str(a)
+            for a in author_field
+        ]
+        return ", ".join(n for n in names if n) or None
+    return None
 
 
-def _get_published(entry) -> str:
-    if hasattr(entry, "published_parsed") and entry.published_parsed:
-        try:
-            return datetime(*entry.published_parsed[:6], tzinfo=timezone.utc).isoformat()
-        except (TypeError, ValueError):
-            pass
-    return getattr(entry, "published", "")
-
-
-def _get_image(entry) -> str:
-    if hasattr(entry, "media_content") and entry.media_content:
-        for m in entry.media_content:
-            url = m.get("url", "")
-            if m.get("medium") == "image" or m.get("type", "").startswith("image"):
-                return url
-            if any(ext in url.lower() for ext in (".jpg", ".jpeg", ".png", ".webp")):
-                return url
-    if hasattr(entry, "media_thumbnail") and entry.media_thumbnail:
-        return entry.media_thumbnail[0].get("url", "")
-    if hasattr(entry, "enclosures") and entry.enclosures:
-        for enc in entry.enclosures:
-            if enc.get("type", "").startswith("image"):
-                return enc.get("href", enc.get("url", ""))
-    return ""
+def match_author(author_str: str) -> dict | None:
+    if not author_str:
+        return None
+    lower = author_str.lower()
+    for key, config in WATCHED_AUTHORS.items():
+        if key in lower:
+            return config
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -205,15 +237,14 @@ def _get_image(entry) -> str:
 
 def post_to_discord(article: Article) -> bool:
     if not DISCORD_WEBHOOK_URL:
-        log.error("DISCORD_WEBHOOK_URL not set")
         return False
 
-    author_config = _match_author(article.author) or {}
+    config = match_author(article.author) or {}
 
     embed: dict = {
         "title": article.title[:256],
         "url": article.url,
-        "color": author_config.get("color", 0x808080),
+        "color": config.get("color", 0x808080),
         "author": {"name": article.author},
         "footer": {"text": "The Athletic"},
     }
@@ -222,7 +253,7 @@ def post_to_discord(article: Article) -> bool:
     if article.published:
         embed["timestamp"] = article.published
     if article.image_url:
-        embed["image"] = {"url": article.image_url}
+        embed["thumbnail"] = {"url": article.image_url}
 
     payload: dict = {"embeds": [embed], "username": WEBHOOK_USERNAME}
 
@@ -239,7 +270,7 @@ def post_to_discord(article: Article) -> bool:
         log.error(f"Discord {resp.status_code}: {resp.text}")
         return False
     except requests.RequestException as e:
-        log.error(f"Post failed: {e}")
+        log.error(f"Discord post failed: {e}")
         return False
 
 
@@ -251,23 +282,78 @@ def run():
     log.info("🔍 Checking for new Gelb / Varnes articles...")
 
     if not DISCORD_WEBHOOK_URL:
-        log.error("Set DISCORD_WEBHOOK_URL as a GitHub Actions secret or env var")
+        log.error("Set DISCORD_WEBHOOK_URL as a GitHub Actions secret")
         sys.exit(1)
 
-    posted = load_posted_ids()
-    new_count = 0
+    state = load_state()
+    known_ids = set(state.get("posted_ids", []) + state.get("skipped_ids", []))
+    new_posted = []
+    new_skipped = []
 
-    for url in RSS_FEEDS:
-        for article in fetch_and_filter(url):
-            if article.id in posted:
-                continue
-            if post_to_discord(article):
-                posted.add(article.id)
-                new_count += 1
-                time.sleep(POST_DELAY)
+    for entry in get_rss_entries():
+        aid = article_id(entry["url"])
+        if aid in known_ids:
+            continue
 
-    save_posted_ids(posted)
-    log.info(f"✅ Done. {new_count} new article(s) posted.")
+        log.info(f"New article: {entry['title'][:60]}...")
+
+        author = extract_author(entry["url"])
+        if not author:
+            log.info("  Could not determine author, skipping")
+            new_skipped.append(aid)
+            continue
+
+        config = match_author(author)
+        if not config:
+            log.info(f"  Author '{author}' — not watched, skipping")
+            new_skipped.append(aid)
+            continue
+
+        article = Article(
+            id=aid,
+            url=entry["url"],
+            title=entry["title"],
+            author=config["display_name"],
+            description=entry.get("description", ""),
+            published=entry.get("published", ""),
+            image_url=entry.get("image_url", ""),
+        )
+
+        if post_to_discord(article):
+            new_posted.append(aid)
+            time.sleep(POST_DELAY)
+
+    # Update state
+    state["posted_ids"] = sorted(set(state.get("posted_ids", [])) | set(new_posted))
+    state["skipped_ids"] = sorted(set(state.get("skipped_ids", [])) | set(new_skipped))
+
+    # Prune skipped list to prevent unbounded growth
+    if len(state["skipped_ids"]) > 500:
+        state["skipped_ids"] = state["skipped_ids"][-500:]
+
+    save_state(state)
+    log.info(f"✅ Done. {len(new_posted)} posted, {len(new_skipped)} skipped.")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _clean_html(text: str) -> str:
+    text = re.sub(r"<[^>]+>", "", text)
+    for old, new in [("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
+                     ("&nbsp;", " "), ("&#39;", "'"), ("&quot;", '"')]:
+        text = text.replace(old, new)
+    return text.strip()
+
+
+def _parse_published(entry) -> str:
+    if hasattr(entry, "published_parsed") and entry.published_parsed:
+        try:
+            return datetime(*entry.published_parsed[:6], tzinfo=timezone.utc).isoformat()
+        except (TypeError, ValueError):
+            pass
+    return getattr(entry, "published", "")
 
 
 if __name__ == "__main__":

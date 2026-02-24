@@ -1,59 +1,50 @@
 # athletic-discord-monitor
 
-Posts new Matt Gelb and Charlotte Varnes articles from The Athletic to your Phillies Therapy Discord. Runs as a free GitHub Actions cron job.
+Posts new Matt Gelb and Charlotte Varnes articles from The Athletic to the Phillies Therapy Discord. Runs free on GitHub Actions.
 
-## Setup (5 minutes)
+## How it works
 
-### 1. Discover the RSS feed
+The Athletic's Phillies RSS feed (`nytimes.com/athletic/rss/mlb/phillies/`) publishes new articles but **no author data**. So the monitor uses a two-step approach:
 
-Run locally to confirm the correct URL and that author filtering works:
+1. **RSS** — polls the feed for new article URLs (stable, structured, no auth needed)
+2. **Page fetch** — for each new URL, fetches the article page and extracts the author from `<meta name="author">`, JSON-LD, or HTML byline
+3. **Filter** — if the author matches Gelb or Varnes, posts to Discord; otherwise skips
+4. **State** — tracks both posted and skipped article IDs in `posted_articles.json`, committed back to the repo after each run
+
+## Setup
+
+### 1. Verify the feed & author detection work
 
 ```bash
-pip install feedparser
-python discover_feeds.py
+pip install feedparser requests beautifulsoup4
+python discover.py
 ```
 
-Update `RSS_FEEDS` in `monitor.py` with whatever URL works.
+This probes the RSS feed and fetches the first 5 article pages, reporting which author-detection strategies succeed. You need at least one strategy to return author names.
 
 ### 2. Create a Discord webhook
 
-1. **Server Settings → Integrations → Webhooks → New Webhook**
-2. Name it, pick the target channel (e.g. `#news`)
-3. Copy the webhook URL
+**Server Settings → Integrations → Webhooks → New Webhook** → pick the channel → copy the URL.
 
-### 3. Create the GitHub repo
+### 3. Push to GitHub
 
 ```bash
-git init athletic-discord-monitor
-cd athletic-discord-monitor
-# copy all files into this directory
-git add .
-git commit -m "Initial commit"
+git init && git add . && git commit -m "init"
 gh repo create athletic-discord-monitor --private --push
 ```
 
-### 4. Add the webhook secret
+### 4. Add the secret
 
 ```bash
 gh secret set DISCORD_WEBHOOK_URL
 # paste your webhook URL when prompted
 ```
 
-Or: repo **Settings → Secrets and variables → Actions → New repository secret**
-
 ### 5. Done
 
-The workflow runs every 15 minutes automatically. It:
-1. Fetches the Phillies RSS feed
-2. Filters for Gelb / Varnes articles
-3. Posts new ones to Discord as rich embeds
-4. Commits `posted_articles.json` back to the repo so it remembers what's been posted
+The workflow runs every 15 minutes. Monitor it in the **Actions** tab. Trigger manually with **Run workflow** anytime.
 
-You can trigger it manually from the **Actions** tab anytime.
-
-## Adding more authors
-
-Edit `WATCHED_AUTHORS` in `monitor.py`:
+## Adding authors
 
 ```python
 WATCHED_AUTHORS = {
@@ -65,4 +56,8 @@ WATCHED_AUTHORS = {
 
 ## Cost
 
-Zero. GitHub Actions free tier gives 2,000 min/month. This job uses ~1 min/month.
+$0. GitHub Actions free tier = 2,000 min/month. This uses ~1 min/month.
+
+## If author detection breaks
+
+If The Athletic changes their page structure or starts requiring auth to serve meta tags, `discover.py` will show you exactly what's available. The fallback chain is: meta tags → JSON-LD → HTML byline. All three would have to break simultaneously.
