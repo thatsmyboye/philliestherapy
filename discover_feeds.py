@@ -9,13 +9,7 @@ import feedparser
 import json
 
 CANDIDATES = [
-    "https://www.nytimes.com/athletic/rss/mlb/team/phillies-philadelphia/",
-    "https://www.nytimes.com/athletic/rss/mlb/team/philadelphia-phillies/",
-    "https://nytimes.com/athletic/rss/mlb/team/phillies-philadelphia/",
-    "https://nytimes.com/athletic/rss/mlb/team/philadelphia-phillies/",
-    "https://www.nytimes.com/athletic/rss/mlb/",
-    "https://www.nytimes.com/athletic/rss/news/",
-    "https://www.nytimes.com/athletic/rss/news",
+    "https://www.nytimes.com/athletic/rss/mlb/phillies/",
 ]
 
 WATCHED = ["matt gelb", "charlotte varnes"]
