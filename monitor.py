@@ -31,7 +31,7 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 # The Athletic team RSS feeds to check.
 # Run discover_feeds.py locally first to confirm the correct URL.
 RSS_FEEDS = [
-    "https://www.nytimes.com/athletic/rss/mlb/team/phillies-philadelphia/",
+    "https://www.nytimes.com/athletic/rss/mlb/phillies/",
 ]
 
 # Authors to watch — matched case-insensitively against RSS author fields.
