@@ -1,4 +1,4 @@
-name: Check Athletic RSS
+name: Phillies Monitor
 
 on:
   schedule:
@@ -22,17 +22,17 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r projects/phillies-monitor/requirements.txt
 
       - name: Run monitor
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python monitor.py
+        run: python projects/phillies-monitor/monitor.py
 
       - name: Commit updated state
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add posted_articles.json
+          git add projects/phillies-monitor/posted_articles.json
           git diff --cached --quiet || git commit -m "Update posted articles state"
           git push
