@@ -15,8 +15,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from SPgrader.monitor import GameMonitor
-from SPgrader.formatter import build_leaderboard_embed
+from .monitor import GameMonitor
+from .formatter import build_leaderboard_embed
 
 
 class SPGraderCog(commands.Cog, name="SPGrader"):
