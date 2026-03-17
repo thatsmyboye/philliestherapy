@@ -19,7 +19,7 @@ import math
 import logging
 from dataclasses import dataclass, field
 from typing import Optional
-from SPgrader.config import Config
+from .config import Config
 
 log = logging.getLogger("scoring")
 

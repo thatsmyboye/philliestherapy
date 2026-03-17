@@ -7,7 +7,7 @@ import logging
 import os
 from dataclasses import asdict, dataclass
 from typing import Optional
-from SPgrader.config import Config
+from .config import Config
 
 log = logging.getLogger("leaderboard")
 
@@ -54,7 +54,7 @@ class Leaderboard:
 
     def record(self, par_result) -> bool:
         """Add a game to the leaderboard. Returns False if duplicate."""
-        from SPgrader.scoring import PARResult
+        from .scoring import PARResult
         result: PARResult = par_result
         data = result.data
 
