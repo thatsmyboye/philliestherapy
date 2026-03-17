@@ -4,8 +4,8 @@ Discord embed builder for SP performance reports.
 
 import discord
 from datetime import datetime
-from scoring import PARResult, ComponentScore
-from leaderboard import Leaderboard, GameRecord
+from SPgrader.scoring import PARResult, ComponentScore
+from SPgrader.leaderboard import Leaderboard, GameRecord
 
 # Phillies colors
 PHILLIES_RED = 0xE81828
