@@ -32,6 +32,7 @@ COGS = [
     "cogs.velocity",
     "cogs.luck",
     "cogs.monitor",
+    "cogs.standings",
 ]
 
 

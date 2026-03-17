@@ -370,3 +370,156 @@ def get_todays_phillies_games() -> list[dict]:
         return statsapi.schedule(date=today, team=PHILLIES_TEAM_ID)
     except Exception:
         return []
+
+
+# ---------------------------------------------------------------------------
+# Standings helpers
+# ---------------------------------------------------------------------------
+
+DIVISION_IDS: dict[str, int] = {
+    "NL East": 204,
+    "NL Central": 205,
+    "NL West": 206,
+    "AL East": 201,
+    "AL Central": 202,
+    "AL West": 203,
+}
+
+
+def get_team_abbreviations() -> dict[int, str]:
+    """Return a mapping of MLBAM team ID → abbreviation (24-hour cache)."""
+    key = "team_abbreviations"
+    cached = _cache_get(key, 24 * 3600)
+    if cached is not None:
+        return cached
+    try:
+        data = statsapi.get("teams", {"sportId": 1})
+        abbr_map = {
+            t["id"]: t.get("abbreviation", t["name"][:3].upper())
+            for t in data.get("teams", [])
+        }
+        _cache_set(key, abbr_map)
+        return abbr_map
+    except Exception:
+        return {}
+
+
+def _pythag_pct(runs_scored: int, runs_allowed: int) -> Optional[float]:
+    """Return Pythagorean winning percentage using exponent 1.83."""
+    if runs_scored == 0 and runs_allowed == 0:
+        return None
+    try:
+        rs = runs_scored ** 1.83
+        ra = runs_allowed ** 1.83
+        return rs / (rs + ra)
+    except Exception:
+        return None
+
+
+def _parse_team_record(tr: dict, abbr_map: dict[int, str], use_wc_gb: bool = False) -> dict:
+    """Parse a single teamRecord dict from the standings API response."""
+    team_id = tr.get("team", {}).get("id", 0)
+    team_name = tr.get("team", {}).get("name", "Unknown")
+    abbr = abbr_map.get(team_id, team_name[:3].upper())
+
+    wins = tr.get("wins", 0)
+    losses = tr.get("losses", 0)
+    pct = tr.get("pct", ".000")
+
+    if use_wc_gb:
+        gb = tr.get("wildCardGamesBack", tr.get("gamesBack", "-"))
+    else:
+        gb = tr.get("gamesBack", "-")
+    if gb == "0.0":
+        gb = "-"
+
+    runs_scored = tr.get("runsScored", 0) or 0
+    runs_allowed = tr.get("runsAllowed", 0) or 0
+    pythag = _pythag_pct(int(runs_scored), int(runs_allowed))
+
+    return {
+        "abbr": abbr,
+        "name": team_name,
+        "team_id": team_id,
+        "w": int(wins),
+        "l": int(losses),
+        "pct": pct,
+        "gb": gb,
+        "pythag": pythag,
+    }
+
+
+def _fetch_standings_data(standings_type: str) -> Optional[dict]:
+    """Fetch raw standings data from the MLB API (5-minute cache per type)."""
+    key = f"standings_{standings_type}_{CURRENT_SEASON}"
+    cached = _cache_get(key, 5 * 60)
+    if cached is not None:
+        return cached
+    try:
+        data = statsapi.get(
+            "standings",
+            {
+                "leagueId": "103,104",
+                "season": CURRENT_SEASON,
+                "standingsTypes": standings_type,
+            },
+        )
+        _cache_set(key, data)
+        return data
+    except Exception:
+        return None
+
+
+def get_division_standings(division_name: str) -> list[dict]:
+    """
+    Return sorted team records for the given division name.
+
+    Each dict: abbr, name, team_id, w, l, pct, gb, pythag.
+    """
+    division_id = DIVISION_IDS.get(division_name)
+    if not division_id:
+        return []
+
+    data = _fetch_standings_data("regularSeason")
+    if not data:
+        return []
+
+    abbr_map = get_team_abbreviations()
+    for record in data.get("records", []):
+        if record.get("division", {}).get("id") == division_id:
+            return [
+                _parse_team_record(tr, abbr_map)
+                for tr in record.get("teamRecords", [])
+            ]
+    return []
+
+
+def get_wildcard_standings() -> dict[str, list[dict]]:
+    """
+    Return wild card standings for both AL and NL.
+
+    Result: {'AL': [...teams...], 'NL': [...teams...]}
+    Each team dict: abbr, name, team_id, w, l, pct, gb, pythag.
+    """
+    data = _fetch_standings_data("wildCard")
+    if not data:
+        return {"AL": [], "NL": []}
+
+    abbr_map = get_team_abbreviations()
+    result: dict[str, list[dict]] = {"AL": [], "NL": []}
+
+    for record in data.get("records", []):
+        league_id = record.get("league", {}).get("id")
+        if league_id == 103:
+            league_key = "AL"
+        elif league_id == 104:
+            league_key = "NL"
+        else:
+            continue
+        teams = [
+            _parse_team_record(tr, abbr_map, use_wc_gb=True)
+            for tr in record.get("teamRecords", [])
+        ]
+        result[league_key].extend(teams)
+
+    return result
