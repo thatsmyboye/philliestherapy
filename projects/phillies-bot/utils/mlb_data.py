@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 import pandas as pd
 import statsapi
-from pybaseball import statcast_batter, statcast_pitcher
+from pybaseball import statcast as statcast_range, statcast_batter, statcast_pitcher
 
 # ---------------------------------------------------------------------------
 # Pitch type code → friendly label
@@ -185,37 +185,67 @@ def _pitcher_luck_score(df: pd.DataFrame, lucky: bool) -> float:
         return float((1 - unlucky_hits[xba_col]).sum())
 
 
+def _get_phillies_team_statcast() -> Optional[pd.DataFrame]:
+    """
+    Fetch all Phillies batted-ball events this season in one bulk call (4-hour cache).
+    This is significantly faster than looping over each player individually.
+    """
+    key = f"team_statcast_PHI_{CURRENT_SEASON}"
+    cached = _cache_get(key, 4 * 3600)
+    if cached is not None:
+        return cached
+    today = date.today().strftime("%Y-%m-%d")
+    try:
+        df = statcast_range(SEASON_START, today, team="PHI")
+        _cache_set(key, df)
+        return df
+    except Exception:
+        return None
+
+
 def get_phillies_luck(lucky: bool) -> dict[str, list[dict]]:
     """
     Return {'hitters': [...], 'pitchers': [...]} with top-3 luckiest or unluckiest
     Phillies players.
 
+    Uses a single bulk team Statcast pull rather than per-player queries.
     Each entry: {'name': str, 'score': float, 'player_id': int}.
     """
     roster = get_phillies_roster()
+    # Build quick lookup: player_id → name and role
+    player_info = {
+        p["id"]: {
+            "name": p["fullName"],
+            "is_pitcher": p.get("primaryPosition", {}).get("abbreviation", "") == "P",
+        }
+        for p in roster
+    }
+    phillies_ids = set(player_info.keys())
+
+    df = _get_phillies_team_statcast()
     hitter_scores: list[dict] = []
     pitcher_scores: list[dict] = []
 
-    for player in roster:
-        pid = player["id"]
-        name = player["fullName"]
-        pos = player.get("primaryPosition", {}).get("abbreviation", "")
-        is_pitcher = pos == "P"
+    if df is not None and not df.empty:
+        # --- Hitters (Phillies players as batter) ---
+        batter_df = df[df["batter"].isin(phillies_ids)].copy()
+        for pid, grp in batter_df.groupby("batter"):
+            info = player_info.get(int(pid))
+            if info is None or info["is_pitcher"]:
+                continue
+            score = _hitter_luck_score(grp, lucky)
+            if score > 0:
+                hitter_scores.append({"name": info["name"], "score": round(score, 2), "player_id": int(pid)})
 
-        if is_pitcher:
-            df = get_pitcher_statcast(pid)
-            if df is None or df.empty:
+        # --- Pitchers (Phillies players as pitcher) ---
+        pitcher_df = df[df["pitcher"].isin(phillies_ids)].copy()
+        for pid, grp in pitcher_df.groupby("pitcher"):
+            info = player_info.get(int(pid))
+            if info is None or not info["is_pitcher"]:
                 continue
-            score = _pitcher_luck_score(df, lucky)
+            score = _pitcher_luck_score(grp, lucky)
             if score > 0:
-                pitcher_scores.append({"name": name, "score": round(score, 2), "player_id": pid})
-        else:
-            df = get_batter_statcast(pid)
-            if df is None or df.empty:
-                continue
-            score = _hitter_luck_score(df, lucky)
-            if score > 0:
-                hitter_scores.append({"name": name, "score": round(score, 2), "player_id": pid})
+                pitcher_scores.append({"name": info["name"], "score": round(score, 2), "player_id": int(pid)})
 
     hitter_scores.sort(key=lambda x: x["score"], reverse=True)
     pitcher_scores.sort(key=lambda x: x["score"], reverse=True)
