@@ -9,11 +9,11 @@ from datetime import date, datetime
 from typing import Optional
 import discord
 
-from config import Config
-from mlb_api import MLBClient
-from scoring import PitcherGameData, grade_pitcher, PARResult
-from formatter import build_embed
-from leaderboard import Leaderboard
+from SPgrader.config import Config
+from SPgrader.mlb_api import MLBClient
+from SPgrader.scoring import PitcherGameData, grade_pitcher, PARResult
+from SPgrader.formatter import build_embed
+from SPgrader.leaderboard import Leaderboard
 
 log = logging.getLogger("monitor")
 

@@ -33,6 +33,7 @@ COGS = [
     "cogs.luck",
     "cogs.monitor",
     "cogs.standings",
+    "cogs.spgrader",
 ]
 
 

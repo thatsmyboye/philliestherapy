@@ -14,6 +14,7 @@ class Config:
     DISCORD_TOKEN: str = os.getenv("DISCORD_TOKEN", "")
     CHANNEL_ID: int = int(os.getenv("CHANNEL_ID", "0"))      # #phillies-therapy channel
     LEADERBOARD_CHANNEL_ID: int = int(os.getenv("LEADERBOARD_CHANNEL_ID", "0"))
+    SP_GRADER_CHANNEL_ID: int = int(os.getenv("SP_GRADER_CHANNEL_ID", "0"))
 
     # MLB
     PHILLIES_TEAM_ID: int = 143
