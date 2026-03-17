@@ -35,9 +35,31 @@ PITCH_LABEL_TO_CODE: dict[str, str] = {v: k for k, v in PITCH_TYPE_LABELS.items(
 # Phillies MLBAM team ID
 PHILLIES_TEAM_ID = 143
 
-# Season start — update this each year or derive dynamically
+# Season configuration
+# Spring Training data is targeted until March 24; Regular Season begins March 25.
 CURRENT_SEASON = datetime.now().year
-SEASON_START = f"{CURRENT_SEASON}-03-01"
+SPRING_TRAINING_START = f"{CURRENT_SEASON}-03-01"
+REGULAR_SEASON_START = f"{CURRENT_SEASON}-03-25"
+
+
+def is_spring_training() -> bool:
+    """Return True if today is before the regular season start (March 25)."""
+    return date.today() < date(date.today().year, 3, 25)
+
+
+def get_season_start() -> str:
+    """Return the appropriate Statcast query start date based on today's date."""
+    return SPRING_TRAINING_START if is_spring_training() else REGULAR_SEASON_START
+
+
+def get_game_type() -> str:
+    """Return 'S' (spring training) or 'R' (regular season) based on today's date."""
+    return "S" if is_spring_training() else "R"
+
+
+# Module-level alias kept for any external imports; prefer get_season_start() for
+# runtime-accurate values when the bot runs across the season boundary.
+SEASON_START = SPRING_TRAINING_START
 
 # ---------------------------------------------------------------------------
 # Simple TTL cache
@@ -69,7 +91,9 @@ def get_pitcher_statcast(mlbam_id: int) -> Optional[pd.DataFrame]:
         return cached
     today = date.today().strftime("%Y-%m-%d")
     try:
-        df = statcast_pitcher(SEASON_START, today, player_id=mlbam_id)
+        df = statcast_pitcher(get_season_start(), today, player_id=mlbam_id)
+        if df is not None and not df.empty and "game_type" in df.columns:
+            df = df[df["game_type"] == get_game_type()].copy()
         _cache_set(key, df)
         return df
     except Exception:
@@ -84,7 +108,9 @@ def get_batter_statcast(mlbam_id: int) -> Optional[pd.DataFrame]:
         return cached
     today = date.today().strftime("%Y-%m-%d")
     try:
-        df = statcast_batter(SEASON_START, today, player_id=mlbam_id)
+        df = statcast_batter(get_season_start(), today, player_id=mlbam_id)
+        if df is not None and not df.empty and "game_type" in df.columns:
+            df = df[df["game_type"] == get_game_type()].copy()
         _cache_set(key, df)
         return df
     except Exception:
@@ -196,7 +222,9 @@ def _get_phillies_team_statcast() -> Optional[pd.DataFrame]:
         return cached
     today = date.today().strftime("%Y-%m-%d")
     try:
-        df = statcast_range(SEASON_START, today, team="PHI")
+        df = statcast_range(get_season_start(), today, team="PHI")
+        if df is not None and not df.empty and "game_type" in df.columns:
+            df = df[df["game_type"] == get_game_type()].copy()
         _cache_set(key, df)
         return df
     except Exception:
@@ -266,7 +294,7 @@ def get_phillies_roster() -> list[dict]:
     try:
         data = statsapi.get(
             "sports_players",
-            {"sportId": 1, "season": CURRENT_SEASON, "gameType": "R"},
+            {"sportId": 1, "season": CURRENT_SEASON, "gameType": get_game_type()},
         )
         players = [
             p for p in data.get("people", [])
