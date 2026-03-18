@@ -31,6 +31,6 @@ jobs:
             open sftp://paul.t.boye@gmail.com.da213d9e:${SFTP_PASSWORD}@na1660.pebblehost.net:2222;
             mirror --reverse --delete --verbose \
               projects/phillies-bot/ \
-              /;
+              projects/phillies-bot/;
             bye
           "
