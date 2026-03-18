@@ -1,63 +1,53 @@
-# athletic-discord-monitor
+# Phillies Therapy
 
-Posts new Matt Gelb and Charlotte Varnes articles from The Athletic to the Phillies Therapy Discord. Runs free on GitHub Actions.
+A multi-project repository for Philadelphia Phillies fan tools and automation, centered around Discord integration.
 
-## How it works
+## Projects
 
-The Athletic's Phillies RSS feed (`nytimes.com/athletic/rss/mlb/phillies/`) publishes new articles but **no author data**. So the monitor uses a two-step approach:
+### 1. **phillies-bot** — Discord Bot
+A feature-rich Discord bot for the Phillies Therapy server, built with discord.py.
 
-1. **RSS** — polls the feed for new article URLs (stable, structured, no auth needed)
-2. **Page fetch** — for each new URL, fetches the article page and extracts the author from `<meta name="author">`, JSON-LD, or HTML byline
-3. **Filter** — if the author matches Gelb or Varnes, posts to Discord; otherwise skips
-4. **State** — tracks both posted and skipped article IDs in `posted_articles.json`, committed back to the repo after each run
+**Features:**
+- **Velocity** — Pitch velocity analysis and fastball tracking
+- **Luck** — Phillies team performance luck metrics and analysis
+- **Monitor** — Posts new articles from The Athletic by watched authors
+- **Standings** — Live team standings and division updates
+- **SP Grader** — Starting pitcher performance grading
 
-## Setup
+**Setup:**
+- Requires `DISCORD_BOT_TOKEN` and `DISCORD_GUILD_ID` environment variables
+- Install dependencies: `pip install -r projects/phillies-bot/requirements.txt`
+- Run: `python projects/phillies-bot/bot.py`
 
-### 1. Verify the feed & author detection work
+---
 
-```bash
-pip install feedparser requests beautifulsoup4
-python discover.py
-```
+### 2. **phillies-monitor** — Athletic Articles RSS Monitor
+Automatically posts new Matt Gelb and Charlotte Varnes articles from The Athletic RSS feed to Discord via webhook. Runs free on GitHub Actions (every 15 minutes).
 
-This probes the RSS feed and fetches the first 5 article pages, reporting which author-detection strategies succeed. You need at least one strategy to return author names.
+**How it works:**
+1. **RSS polling** — queries the Phillies feed for new articles
+2. **Author extraction** — fetches each article page and extracts author from meta tags, JSON-LD, or HTML byline
+3. **Filtering** — posts only articles by watched authors
+4. **State tracking** — maintains `posted_articles.json` to avoid duplicates
 
-### 2. Create a Discord webhook
+**Setup:**
+1. Verify the RSS feed and author detection:
+   ```bash
+   pip install feedparser requests beautifulsoup4
+   python projects/phillies-monitor/discover.py
+   ```
 
-**Server Settings → Integrations → Webhooks → New Webhook** → pick the channel → copy the URL.
+2. Create a Discord webhook: **Server Settings → Integrations → Webhooks → New Webhook** → copy the URL
 
-### 3. Push to GitHub
+3. Add the webhook as a GitHub secret: `gh secret set DISCORD_WEBHOOK_URL`
 
-```bash
-git init && git add . && git commit -m "init"
-gh repo create athletic-discord-monitor --private --push
-```
+4. The workflow runs automatically every 15 minutes (configurable in `.github/workflows/`)
 
-### 4. Add the secret
+**Customization:**
+Edit the `WATCHED_AUTHORS` dict in `monitor.py` to add or remove tracked authors.
 
-```bash
-gh secret set DISCORD_WEBHOOK_URL
-# paste your webhook URL when prompted
-```
-
-### 5. Done
-
-The workflow runs every 15 minutes. Monitor it in the **Actions** tab. Trigger manually with **Run workflow** anytime.
-
-## Adding authors
-
-```python
-WATCHED_AUTHORS = {
-    "matt gelb":        {"display_name": "Matt Gelb",        "color": 0xC41E3A},
-    "charlotte varnes": {"display_name": "Charlotte Varnes", "color": 0x002D72},
-    "scott lauber":     {"display_name": "Scott Lauber",     "color": 0xFFD700},
-}
-```
+---
 
 ## Cost
 
-$0. GitHub Actions free tier = 2,000 min/month. This uses ~1 min/month.
-
-## If author detection breaks
-
-If The Athletic changes their page structure or starts requiring auth to serve meta tags, `discover.py` will show you exactly what's available. The fallback chain is: meta tags → JSON-LD → HTML byline. All three would have to break simultaneously.
+$0 for all projects. GitHub Actions free tier includes 2,000 min/month; monitor uses ~1 min/month.
