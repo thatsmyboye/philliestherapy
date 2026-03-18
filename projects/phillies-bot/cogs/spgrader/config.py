@@ -45,4 +45,6 @@ class Config:
     }
 
     # Data file for leaderboard persistence
-    DATA_FILE: str = "leaderboard.json"
+    DATA_FILE: str = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "leaderboard.json"
+    )

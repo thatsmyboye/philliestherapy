@@ -156,7 +156,7 @@ def build_leaderboard_embed(lb: Leaderboard, page: str = "averages") -> discord.
                 )
             embed.description = "\n".join(lines)
 
-    else:  # individual
+    elif page == "individual":
         embed = discord.Embed(
             title="⭐  Phillies Therapy PAR Leaderboard — Top Performances",
             color=PHILLIES_RED,
@@ -173,6 +173,24 @@ def build_leaderboard_embed(lb: Leaderboard, page: str = "averages") -> discord.
                 lines.append(
                     f"{medal} **{rec.pitcher_name}** vs {rec.opponent}  `{rec.game_date}`  ·  "
                     f"**{rec.score:.1f}** PAR  ·  {rec.ip} IP  {rec.k}K/{rec.bb}BB  {rec.er}ER"
+                )
+            embed.description = "\n".join(lines)
+
+    else:  # cal — chronological recent-games view
+        embed = discord.Embed(
+            title="📅  Phillies Therapy PAR Leaderboard — Recent Games",
+            color=PHILLIES_RED,
+            timestamp=datetime.utcnow(),
+        )
+        recent = sorted(lb._records, key=lambda r: r.game_date, reverse=True)[:10]
+        if not recent:
+            embed.description = "_No games recorded yet._"
+        else:
+            lines = []
+            for rec in recent:
+                lines.append(
+                    f"📅 `{rec.game_date}` **{rec.pitcher_name}** vs {rec.opponent}  ·  "
+                    f"**{rec.score:.1f}** PAR ({rec.grade})  ·  {rec.ip} IP  {rec.k}K/{rec.bb}BB  {rec.er}ER"
                 )
             embed.description = "\n".join(lines)
 

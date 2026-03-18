@@ -95,10 +95,11 @@ class MLBClient:
         Fetch Statcast pitch-level data for a game/pitcher from Baseball Savant.
         Returns list of pitch dicts with exit_velocity, launch_angle, etc.
         """
+        season = date.today().year
         url = (
             f"{STATCAST_BASE}/statcast_search/csv"
             f"?all=true&hfPT=&hfAB=&hfBBT=&hfPR=&hfZ=&stadium=&hfBBL=&hfNewZones=&"
-            f"hfGT=R%7C&hfC=&hfSea=2025%7C&hfSit=&player_type=pitcher&"
+            f"hfGT=R%7C&hfC=&hfSea={season}%7C&hfSit=&player_type=pitcher&"
             f"hfOuts=&opponent=&pitcher_throws=&batter_stands=&"
             f"hfSA=&game_date_gt=&game_date_lt=&"
             f"pitchers_lookup%5B%5D={pitcher_id}&"
