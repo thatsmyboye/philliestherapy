@@ -181,10 +181,11 @@ class GameMonitor:
         elif side == "away" and current_inning_half.lower() == "bottom":
             return defense.get("pitcher", {}).get("id")
         else:
-            # Between-inning check via boxscore order
-            boxscore = feed.get("liveData", {}).get("boxscore", {})
-            pitchers = boxscore.get("teams", {}).get(side, {}).get("pitchers", [])
-            return pitchers[-1] if pitchers else None
+            # Between innings — can't reliably determine current pitcher from the
+            # boxscore pitchers list because a reliever can appear there before
+            # throwing a single pitch. Return None to defer detection to the next
+            # polling cycle when inningHalf is active again.
+            return None
 
     def _is_inning_complete(
         self,
@@ -217,12 +218,34 @@ class GameMonitor:
                 return True
         return False
 
+    def _extract_pitcher_stats_from_feed(self, feed: dict, pitcher_id: int) -> Optional[dict]:
+        """
+        Pull a pitcher's pitching stats out of the embedded boxscore in a live-feed
+        response.  This avoids a second HTTP round-trip and keeps stats consistent
+        with the same data snapshot used for exit detection.
+        """
+        boxscore = feed.get("liveData", {}).get("boxscore", {})
+        for side in ("home", "away"):
+            players = boxscore.get("teams", {}).get(side, {}).get("players", {})
+            key = f"ID{pitcher_id}"
+            if key in players:
+                stats = players[key].get("stats", {}).get("pitching", {})
+                if stats:
+                    return stats
+        return None
+
     async def _build_pitcher_data(
         self, tg: TrackedGame, feed: dict, game_info: dict
     ) -> Optional[PitcherGameData]:
         """Assemble a PitcherGameData from boxscore + Statcast."""
-        # Boxscore stats
-        bs_stats = await self.api.get_pitcher_game_stats(tg.game_pk, tg.sp_id)
+        # Prefer stats embedded in the live feed (same snapshot used for exit
+        # detection) to avoid a stale separate boxscore call.
+        bs_stats = self._extract_pitcher_stats_from_feed(feed, tg.sp_id)
+        if bs_stats is None:
+            log.warning(
+                f"Stats not in live feed for {tg.sp_name}, falling back to boxscore API"
+            )
+            bs_stats = await self.api.get_pitcher_game_stats(tg.game_pk, tg.sp_id)
         if bs_stats is None:
             log.warning(f"Could not get boxscore stats for {tg.sp_name}")
             return None
