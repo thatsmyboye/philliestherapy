@@ -17,13 +17,8 @@ import os
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-import pybaseball
 
 load_dotenv()
-
-# Enable pybaseball disk caching — raw Statcast queries take 30–60s without it.
-# Cache files land in ~/.pybaseball/cache/ with a default 7-day TTL.
-pybaseball.cache.enable()
 
 TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])

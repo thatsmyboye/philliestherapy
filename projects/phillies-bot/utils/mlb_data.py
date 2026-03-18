@@ -1,16 +1,19 @@
 """
-MLB data helpers: pybaseball Statcast queries and statsapi wrappers,
-with simple in-memory TTL caching to avoid hammering the data sources.
+MLB data helpers: Baseball Savant Statcast queries (direct CSV) and statsapi
+wrappers, with simple in-memory TTL caching to avoid hammering the data sources.
 """
 from __future__ import annotations
 
+import csv
+import io
 import time
+import urllib.error
+import urllib.request
+from collections import defaultdict
 from datetime import date, datetime
 from typing import Any, Optional
 
-import pandas as pd
 import statsapi
-from pybaseball import statcast as statcast_range, statcast_batter, statcast_pitcher
 
 # ---------------------------------------------------------------------------
 # Pitch type code → friendly label
@@ -36,7 +39,6 @@ PITCH_LABEL_TO_CODE: dict[str, str] = {v: k for k, v in PITCH_TYPE_LABELS.items(
 PHILLIES_TEAM_ID = 143
 
 # Season configuration
-# Spring Training data is targeted until March 24; Regular Season begins March 25.
 CURRENT_SEASON = datetime.now().year
 SPRING_TRAINING_START = f"{CURRENT_SEASON}-03-01"
 REGULAR_SEASON_START = f"{CURRENT_SEASON}-03-25"
@@ -80,41 +82,112 @@ def _cache_set(key: str, value: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Baseball Savant CSV helper
+# ---------------------------------------------------------------------------
+
+_SAVANT_BASE = "https://baseballsavant.mlb.com/statcast_search/csv"
+_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; PhilliesBot/1.0)"}
+
+
+def _to_float(val: Any) -> Optional[float]:
+    """Safely convert a CSV field to float, returning None on failure."""
+    try:
+        s = str(val).strip()
+        return float(s) if s else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _to_int(val: Any) -> int:
+    """Safely convert a CSV field to int, returning 0 on failure."""
+    try:
+        s = str(val).strip()
+        return int(float(s)) if s else 0
+    except (ValueError, TypeError):
+        return 0
+
+
+def _fetch_statcast_csv(url: str) -> list[dict]:
+    """
+    GET a Baseball Savant CSV URL and return rows as a list of dicts.
+    Returns an empty list on any error or if the response isn't CSV data.
+    """
+    try:
+        req = urllib.request.Request(url, headers=_HEADERS)
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            raw = resp.read().decode("utf-8")
+        # Baseball Savant returns HTML when there's an error or no results
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("<"):
+            return []
+        reader = csv.DictReader(io.StringIO(stripped))
+        return [row for row in reader]
+    except Exception:
+        return []
+
+
+def _statcast_pitcher_url(mlbam_id: int, start: str, end: str, game_type: str) -> str:
+    return (
+        f"{_SAVANT_BASE}?player_type=pitcher"
+        f"&pitchers_lookup%5B%5D={mlbam_id}"
+        f"&game_date_gt={start}&game_date_lt={end}"
+        f"&hfGT={game_type}%7C&hfSea={CURRENT_SEASON}%7C"
+        f"&type=details&all=true"
+    )
+
+
+def _statcast_batter_url(mlbam_id: int, start: str, end: str, game_type: str) -> str:
+    return (
+        f"{_SAVANT_BASE}?player_type=batter"
+        f"&batters_lookup%5B%5D={mlbam_id}"
+        f"&game_date_gt={start}&game_date_lt={end}"
+        f"&hfGT={game_type}%7C&hfSea={CURRENT_SEASON}%7C"
+        f"&type=details&all=true"
+    )
+
+
+def _statcast_team_url(
+    team: str, player_type: str, start: str, end: str, game_type: str
+) -> str:
+    return (
+        f"{_SAVANT_BASE}?player_type={player_type}"
+        f"&team={team}"
+        f"&game_date_gt={start}&game_date_lt={end}"
+        f"&hfGT={game_type}%7C&hfSea={CURRENT_SEASON}%7C"
+        f"&type=details&all=true"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Statcast helpers
 # ---------------------------------------------------------------------------
 
-def get_pitcher_statcast(mlbam_id: int) -> Optional[pd.DataFrame]:
-    """Return this-season Statcast data for a pitcher (4-hour cache)."""
+def get_pitcher_statcast(mlbam_id: int) -> list[dict]:
+    """Return this-season Statcast rows for a pitcher (4-hour cache)."""
     key = f"pitcher_{mlbam_id}"
     cached = _cache_get(key, 4 * 3600)
     if cached is not None:
         return cached
     today = date.today().strftime("%Y-%m-%d")
-    try:
-        df = statcast_pitcher(get_season_start(), today, player_id=mlbam_id)
-        if df is not None and not df.empty and "game_type" in df.columns:
-            df = df[df["game_type"] == get_game_type()].copy()
-        _cache_set(key, df)
-        return df
-    except Exception:
-        return None
+    url = _statcast_pitcher_url(mlbam_id, get_season_start(), today, get_game_type())
+    rows = _fetch_statcast_csv(url)
+    result = [r for r in rows if r.get("game_type") == get_game_type()]
+    _cache_set(key, result)
+    return result
 
 
-def get_batter_statcast(mlbam_id: int) -> Optional[pd.DataFrame]:
-    """Return this-season Statcast data for a batter (4-hour cache)."""
+def get_batter_statcast(mlbam_id: int) -> list[dict]:
+    """Return this-season Statcast rows for a batter (4-hour cache)."""
     key = f"batter_{mlbam_id}"
     cached = _cache_get(key, 4 * 3600)
     if cached is not None:
         return cached
     today = date.today().strftime("%Y-%m-%d")
-    try:
-        df = statcast_batter(get_season_start(), today, player_id=mlbam_id)
-        if df is not None and not df.empty and "game_type" in df.columns:
-            df = df[df["game_type"] == get_game_type()].copy()
-        _cache_set(key, df)
-        return df
-    except Exception:
-        return None
+    url = _statcast_batter_url(mlbam_id, get_season_start(), today, get_game_type())
+    rows = _fetch_statcast_csv(url)
+    result = [r for r in rows if r.get("game_type") == get_game_type()]
+    _cache_set(key, result)
+    return result
 
 
 def top_pitch_velos(mlbam_id: int, pitch_code: str, n: int = 3) -> list[dict]:
@@ -123,23 +196,26 @@ def top_pitch_velos(mlbam_id: int, pitch_code: str, n: int = 3) -> list[dict]:
 
     Each dict contains: speed, date, opponent, pitch_type_label, count_str.
     """
-    df = get_pitcher_statcast(mlbam_id)
-    if df is None or df.empty:
+    rows = get_pitcher_statcast(mlbam_id)
+    if not rows:
         return []
 
-    df = df[df["pitch_type"] == pitch_code].copy()
-    df = df.dropna(subset=["release_speed"])
-    df = df.sort_values("release_speed", ascending=False).head(n)
+    filtered = [
+        r for r in rows
+        if r.get("pitch_type") == pitch_code and _to_float(r.get("release_speed")) is not None
+    ]
+    filtered.sort(key=lambda r: _to_float(r.get("release_speed")) or 0.0, reverse=True)
+    filtered = filtered[:n]
 
     results = []
-    for _, row in df.iterrows():
+    for row in filtered:
         results.append({
-            "speed": round(float(row["release_speed"]), 1),
+            "speed": round(_to_float(row.get("release_speed")) or 0.0, 1),
             "date": str(row.get("game_date", ""))[:10],
             "pitch_type_label": PITCH_TYPE_LABELS.get(pitch_code, pitch_code),
-            "balls": int(row.get("balls", 0)),
-            "strikes": int(row.get("strikes", 0)),
-            "inning": int(row.get("inning", 0)),
+            "balls": _to_int(row.get("balls")),
+            "strikes": _to_int(row.get("strikes")),
+            "inning": _to_int(row.get("inning")),
             "description": str(row.get("description", "")),
         })
     return results
@@ -151,20 +227,22 @@ def top_exit_velos(mlbam_id: int, n: int = 3) -> list[dict]:
 
     Each dict contains: exit_velo, launch_angle, event, date.
     """
-    df = get_batter_statcast(mlbam_id)
-    if df is None or df.empty:
+    rows = get_batter_statcast(mlbam_id)
+    if not rows:
         return []
 
-    df = df.dropna(subset=["launch_speed"]).copy()
-    df = df.sort_values("launch_speed", ascending=False).head(n)
+    filtered = [r for r in rows if _to_float(r.get("launch_speed")) is not None]
+    filtered.sort(key=lambda r: _to_float(r.get("launch_speed")) or 0.0, reverse=True)
+    filtered = filtered[:n]
 
     results = []
-    for _, row in df.iterrows():
+    for row in filtered:
         event = str(row.get("events", "unknown")).replace("_", " ").title()
+        dist = _to_int(row.get("hit_distance_sc"))
         results.append({
-            "exit_velo": round(float(row["launch_speed"]), 1),
-            "launch_angle": round(float(row.get("launch_angle", 0)), 1),
-            "hit_distance": int(row.get("hit_distance_sc", 0) or 0),
+            "exit_velo": round(_to_float(row.get("launch_speed")) or 0.0, 1),
+            "launch_angle": round(_to_float(row.get("launch_angle")) or 0.0, 1),
+            "hit_distance": dist,
             "event": event,
             "date": str(row.get("game_date", ""))[:10],
         })
@@ -175,60 +253,75 @@ def top_exit_velos(mlbam_id: int, n: int = 3) -> list[dict]:
 # Luck / unluck helpers
 # ---------------------------------------------------------------------------
 
-def _hitter_luck_score(df: pd.DataFrame, lucky: bool) -> float:
+_HIT_EVENTS = {"single", "double", "triple", "home_run"}
+
+
+def _hitter_luck_score(rows: list[dict], lucky: bool) -> float:
     """
     lucky=True  → hits on low-xBA events (sum of 1 - xBA per hit)
     lucky=False → outs on high-xBA events (sum of xBA per out)
     """
-    xba_col = "estimated_ba_using_speedangle"
-    if xba_col not in df.columns:
-        return 0.0
-    df = df.dropna(subset=[xba_col])
-    is_hit = df["events"].isin(["single", "double", "triple", "home_run"])
-    if lucky:
-        lucky_hits = df[is_hit & (df[xba_col] < 0.250)]
-        return float((1 - lucky_hits[xba_col]).sum())
-    else:
-        unlucky_outs = df[~is_hit & df["events"].notna() & (df[xba_col] > 0.500)]
-        return float(unlucky_outs[xba_col].sum())
+    total = 0.0
+    for row in rows:
+        xba = _to_float(row.get("estimated_ba_using_speedangle"))
+        if xba is None:
+            continue
+        is_hit = row.get("events", "") in _HIT_EVENTS
+        if lucky:
+            if is_hit and xba < 0.250:
+                total += 1 - xba
+        else:
+            if not is_hit and row.get("events", "") and xba > 0.500:
+                total += xba
+    return total
 
 
-def _pitcher_luck_score(df: pd.DataFrame, lucky: bool) -> float:
+def _pitcher_luck_score(rows: list[dict], lucky: bool) -> float:
     """
     lucky=True  → outs on high-xBA events (pitcher got lucky)
     lucky=False → hits on low-xBA events (pitcher was unlucky)
     """
-    xba_col = "estimated_ba_using_speedangle"
-    if xba_col not in df.columns:
-        return 0.0
-    df = df.dropna(subset=[xba_col])
-    is_hit = df["events"].isin(["single", "double", "triple", "home_run"])
-    if lucky:
-        lucky_outs = df[~is_hit & df["events"].notna() & (df[xba_col] > 0.500)]
-        return float(lucky_outs[xba_col].sum())
-    else:
-        unlucky_hits = df[is_hit & (df[xba_col] < 0.250)]
-        return float((1 - unlucky_hits[xba_col]).sum())
+    total = 0.0
+    for row in rows:
+        xba = _to_float(row.get("estimated_ba_using_speedangle"))
+        if xba is None:
+            continue
+        is_hit = row.get("events", "") in _HIT_EVENTS
+        if lucky:
+            if not is_hit and row.get("events", "") and xba > 0.500:
+                total += xba
+        else:
+            if is_hit and xba < 0.250:
+                total += 1 - xba
+    return total
 
 
-def _get_phillies_team_statcast() -> Optional[pd.DataFrame]:
-    """
-    Fetch all Phillies batted-ball events this season in one bulk call (4-hour cache).
-    This is significantly faster than looping over each player individually.
-    """
-    key = f"team_statcast_PHI_{CURRENT_SEASON}"
+def _get_phillies_batter_statcast() -> list[dict]:
+    """Fetch all Phillies batter Statcast events this season (4-hour cache)."""
+    key = f"team_batter_statcast_PHI_{CURRENT_SEASON}"
     cached = _cache_get(key, 4 * 3600)
     if cached is not None:
         return cached
     today = date.today().strftime("%Y-%m-%d")
-    try:
-        df = statcast_range(get_season_start(), today, team="PHI")
-        if df is not None and not df.empty and "game_type" in df.columns:
-            df = df[df["game_type"] == get_game_type()].copy()
-        _cache_set(key, df)
-        return df
-    except Exception:
-        return None
+    url = _statcast_team_url("PHI", "batter", get_season_start(), today, get_game_type())
+    rows = _fetch_statcast_csv(url)
+    result = [r for r in rows if r.get("game_type") == get_game_type()]
+    _cache_set(key, result)
+    return result
+
+
+def _get_phillies_pitcher_statcast() -> list[dict]:
+    """Fetch all Phillies pitcher Statcast events this season (4-hour cache)."""
+    key = f"team_pitcher_statcast_PHI_{CURRENT_SEASON}"
+    cached = _cache_get(key, 4 * 3600)
+    if cached is not None:
+        return cached
+    today = date.today().strftime("%Y-%m-%d")
+    url = _statcast_team_url("PHI", "pitcher", get_season_start(), today, get_game_type())
+    rows = _fetch_statcast_csv(url)
+    result = [r for r in rows if r.get("game_type") == get_game_type()]
+    _cache_set(key, result)
+    return result
 
 
 def get_phillies_luck(lucky: bool) -> dict[str, list[dict]]:
@@ -236,11 +329,9 @@ def get_phillies_luck(lucky: bool) -> dict[str, list[dict]]:
     Return {'hitters': [...], 'pitchers': [...]} with top-3 luckiest or unluckiest
     Phillies players.
 
-    Uses a single bulk team Statcast pull rather than per-player queries.
     Each entry: {'name': str, 'score': float, 'player_id': int}.
     """
     roster = get_phillies_roster()
-    # Build quick lookup: player_id → name and role
     player_info = {
         p["id"]: {
             "name": p["fullName"],
@@ -248,32 +339,48 @@ def get_phillies_luck(lucky: bool) -> dict[str, list[dict]]:
         }
         for p in roster
     }
-    phillies_ids = set(player_info.keys())
 
-    df = _get_phillies_team_statcast()
+    # --- Hitters ---
+    batter_rows = _get_phillies_batter_statcast()
+    batter_groups: dict[str, list[dict]] = defaultdict(list)
+    for row in batter_rows:
+        b = row.get("batter", "")
+        if b:
+            batter_groups[b].append(row)
+
     hitter_scores: list[dict] = []
+    for pid_str, grp in batter_groups.items():
+        try:
+            pid = int(pid_str)
+        except ValueError:
+            continue
+        info = player_info.get(pid)
+        if info is None or info["is_pitcher"]:
+            continue
+        score = _hitter_luck_score(grp, lucky)
+        if score > 0:
+            hitter_scores.append({"name": info["name"], "score": round(score, 2), "player_id": pid})
+
+    # --- Pitchers ---
+    pitcher_rows = _get_phillies_pitcher_statcast()
+    pitcher_groups: dict[str, list[dict]] = defaultdict(list)
+    for row in pitcher_rows:
+        p = row.get("pitcher", "")
+        if p:
+            pitcher_groups[p].append(row)
+
     pitcher_scores: list[dict] = []
-
-    if df is not None and not df.empty:
-        # --- Hitters (Phillies players as batter) ---
-        batter_df = df[df["batter"].isin(phillies_ids)].copy()
-        for pid, grp in batter_df.groupby("batter"):
-            info = player_info.get(int(pid))
-            if info is None or info["is_pitcher"]:
-                continue
-            score = _hitter_luck_score(grp, lucky)
-            if score > 0:
-                hitter_scores.append({"name": info["name"], "score": round(score, 2), "player_id": int(pid)})
-
-        # --- Pitchers (Phillies players as pitcher) ---
-        pitcher_df = df[df["pitcher"].isin(phillies_ids)].copy()
-        for pid, grp in pitcher_df.groupby("pitcher"):
-            info = player_info.get(int(pid))
-            if info is None or not info["is_pitcher"]:
-                continue
-            score = _pitcher_luck_score(grp, lucky)
-            if score > 0:
-                pitcher_scores.append({"name": info["name"], "score": round(score, 2), "player_id": int(pid)})
+    for pid_str, grp in pitcher_groups.items():
+        try:
+            pid = int(pid_str)
+        except ValueError:
+            continue
+        info = player_info.get(pid)
+        if info is None or not info["is_pitcher"]:
+            continue
+        score = _pitcher_luck_score(grp, lucky)
+        if score > 0:
+            pitcher_scores.append({"name": info["name"], "score": round(score, 2), "player_id": pid})
 
     hitter_scores.sort(key=lambda x: x["score"], reverse=True)
     pitcher_scores.sort(key=lambda x: x["score"], reverse=True)
