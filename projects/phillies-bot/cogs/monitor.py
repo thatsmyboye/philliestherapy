@@ -9,6 +9,7 @@ Polls live Phillies game data every 30 seconds and posts alerts when:
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime, timezone
 
@@ -65,14 +66,18 @@ class MonitorCog(commands.Cog, name="Monitor"):
         """
         Load career / season stats for all current Phillies players.
         Seeds state with career totals and determines career-high eligibility.
+
+        Statsapi calls are dispatched to a thread-pool executor so they do not
+        block the asyncio event loop (Discord heartbeats keep firing normally).
         """
-        roster = get_phillies_roster()
+        loop = asyncio.get_event_loop()
+        roster = await loop.run_in_executor(None, get_phillies_roster)
         for player in roster:
             pid = player["id"]
             self._phillies_players[pid] = player
 
             # Career high eligibility: at least one prior season with 100+ PA or 20+ IP
-            seasons = get_season_stats_by_year(pid)
+            seasons = await loop.run_in_executor(None, get_season_stats_by_year, pid)
             prior_hitting = [
                 s for s in seasons
                 if s.get("group") == "hitting"
@@ -88,7 +93,7 @@ class MonitorCog(commands.Cog, name="Monitor"):
             self._career_high_eligible[pid] = bool(prior_hitting or prior_pitching)
 
             # Seed career totals from career stats if not already tracked
-            career = get_career_stats(pid)
+            career = await loop.run_in_executor(None, get_career_stats, pid)
             hitting = career.get("hitting", {})
             pitching = career.get("pitching", {})
 
@@ -145,7 +150,8 @@ class MonitorCog(commands.Cog, name="Monitor"):
         if now_hour < 12 or now_hour >= 5:
             pass  # Always attempt; statsapi.schedule returns nothing if no games
 
-        games = get_todays_phillies_games()
+        loop = asyncio.get_event_loop()
+        games = await loop.run_in_executor(None, get_todays_phillies_games)
         live_games = [g for g in games if g.get("status") == "In Progress"]
 
         for game in live_games:
@@ -169,7 +175,8 @@ class MonitorCog(commands.Cog, name="Monitor"):
     # Per-game event processing
     # ------------------------------------------------------------------
     async def _check_game(self, game_pk: int) -> None:
-        data = get_live_game_data(game_pk)
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, get_live_game_data, game_pk)
         if not data:
             return
 
@@ -347,7 +354,10 @@ class MonitorCog(commands.Cog, name="Monitor"):
         Requires a live season-stat refresh — we use statsapi for this.
         """
         try:
-            data = statsapi.player_stat_data(pid, group="[hitting]", type="season")
+            loop = asyncio.get_event_loop()
+            data = await loop.run_in_executor(
+                None, lambda: statsapi.player_stat_data(pid, group="[hitting]", type="season")
+            )
             season_stats = {}
             for group in data.get("stats", []):
                 if group.get("group", {}).get("displayName", "").lower() == "hitting":
@@ -374,7 +384,10 @@ class MonitorCog(commands.Cog, name="Monitor"):
         self, pid: int, name: str, channel: discord.TextChannel | None
     ) -> None:
         try:
-            data = statsapi.player_stat_data(pid, group="[pitching]", type="season")
+            loop = asyncio.get_event_loop()
+            data = await loop.run_in_executor(
+                None, lambda: statsapi.player_stat_data(pid, group="[pitching]", type="season")
+            )
             season_stats = {}
             for group in data.get("stats", []):
                 if group.get("group", {}).get("displayName", "").lower() == "pitching":
