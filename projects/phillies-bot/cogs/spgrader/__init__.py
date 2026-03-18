@@ -80,13 +80,15 @@ class SPGraderCog(commands.Cog, name="SPGrader"):
     )
     @app_commands.describe(pitcher="Pitcher's name (partial match OK)")
     async def par(self, interaction: discord.Interaction, pitcher: str) -> None:
+        await interaction.response.defer()
+
         lb = self.monitor.leaderboard
         records = [
             r for r in lb._records
             if pitcher.lower() in r.pitcher_name.lower()
         ]
         if not records:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"❌ No records found for **{pitcher}**.", ephemeral=True
             )
             return
@@ -119,7 +121,7 @@ class SPGraderCog(commands.Cog, name="SPGrader"):
             color=0xE81828,
         )
         embed.set_footer(text="Philly Ace Rating (PAR) · Phillies Therapy Bot")
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:
