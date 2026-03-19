@@ -17,6 +17,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Create .env file from secrets
+        run: |
+          cat > projects/phillies-bot/.env <<'EOF'
+          DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_GUILD_ID=${{ secrets.DISCORD_GUILD_ID }}
+          ALERTS_CHANNEL_ID=${{ secrets.ALERTS_CHANNEL_ID }}
+          SP_GRADER_CHANNEL_ID=${{ secrets.SP_GRADER_CHANNEL_ID }}
+          EOF
+          # Strip leading whitespace from heredoc indentation
+          sed -i 's/^[[:space:]]*//' projects/phillies-bot/.env
+
       - name: Install lftp
         run: sudo apt-get install -y lftp
 
