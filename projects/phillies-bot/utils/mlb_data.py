@@ -545,6 +545,90 @@ def get_todays_phillies_games() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Stolen base Statcast leaderboards
+# ---------------------------------------------------------------------------
+
+_SAVANT_SPRINT_SPEED_URL = (
+    "https://baseballsavant.mlb.com/sprint_speed_leaderboard"
+    "?year={year}&type=runner&min=0&csv=true"
+)
+
+_SAVANT_POP_TIME_URL = (
+    "https://baseballsavant.mlb.com/leaderboard/pop-time"
+    "?min_season={year}&max_season={year}&team=&player_id=&min=1&csv=true"
+)
+
+
+def get_sprint_speed_leaderboard() -> dict[int, dict]:
+    """
+    Return a mapping of player_id → {sprint_speed, lead_distance, name}
+    for all MLB runners this season (12-hour cache).
+
+    sprint_speed is in ft/s. lead_distance is ft (None if not in CSV).
+    """
+    key = f"sprint_speed_{CURRENT_SEASON}"
+    cached = _cache_get(key, 12 * 3600)
+    if cached is not None:
+        return cached
+
+    url = _SAVANT_SPRINT_SPEED_URL.format(year=CURRENT_SEASON)
+    rows = _fetch_statcast_csv(url)
+    result: dict[int, dict] = {}
+    for row in rows:
+        pid = _to_int(row.get("player_id") or row.get("mlbam_id", 0))
+        if not pid:
+            continue
+        speed = _to_float(row.get("sprint_speed"))
+        if speed is None:
+            continue
+        first = str(row.get("first_name", "")).strip()
+        last = str(row.get("last_name", "")).strip()
+        name = f"{first} {last}".strip() if (first or last) else str(row.get("player_name", ""))
+        lead = _to_float(row.get("lead_distance"))  # present in some exports, None if absent
+        result[pid] = {"sprint_speed": speed, "lead_distance": lead, "name": name}
+
+    _cache_set(key, result)
+    return result
+
+
+def get_pop_time_leaderboard() -> dict[int, dict]:
+    """
+    Return a mapping of catcher player_id → {pop_time, name} for all MLB
+    catchers this season (12-hour cache).
+
+    pop_time is in seconds (average pop time to 2B on steal attempts).
+    """
+    key = f"pop_time_{CURRENT_SEASON}"
+    cached = _cache_get(key, 12 * 3600)
+    if cached is not None:
+        return cached
+
+    url = _SAVANT_POP_TIME_URL.format(year=CURRENT_SEASON)
+    rows = _fetch_statcast_csv(url)
+    result: dict[int, dict] = {}
+    for row in rows:
+        pid = _to_int(row.get("player_id") or row.get("catcher_id", 0))
+        if not pid:
+            continue
+        # Try multiple possible column names
+        pop = (
+            _to_float(row.get("pop_2b_sba"))
+            or _to_float(row.get("pop_2b_cs"))
+            or _to_float(row.get("pop_time"))
+        )
+        if pop is None:
+            continue
+        name = (
+            str(row.get("player_name", "")).strip()
+            or (str(row.get("first_name", "")).strip() + " " + str(row.get("last_name", "")).strip()).strip()
+        )
+        result[pid] = {"pop_time": pop, "name": name}
+
+    _cache_set(key, result)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Standings helpers
 # ---------------------------------------------------------------------------
 

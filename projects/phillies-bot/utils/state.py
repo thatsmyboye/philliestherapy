@@ -14,6 +14,14 @@ _DEFAULT_STATE = {
     "season_totals": {},
     "posted_milestones": [],
     "last_play_counts": {},
+    # Steal monitor: per-runner attempt history for weighted success rate tracking
+    # { player_id_str: { "name": str, "attempts": [ {success, difficulty, ...} ] } }
+    "steal_grades": {},
+    # Deduplication: set of "game_pk:play_idx:event_idx" strings already alerted
+    "steal_events_posted": [],
+    # Per-game event count tracking for steal monitor (more granular than last_play_counts)
+    # { game_pk_str: { play_idx_str: event_count } }
+    "steal_event_counts": {},
 }
 
 
@@ -89,3 +97,44 @@ def record_milestone(state: dict, player_id: str, stat: str, value: int) -> None
     key = milestone_key(player_id, stat, value)
     if key not in state["posted_milestones"]:
         state["posted_milestones"].append(key)
+
+
+# ---------------------------------------------------------------------------
+# Steal grades helpers
+# ---------------------------------------------------------------------------
+
+def add_steal_attempt(state: dict, player_id: int, name: str, attempt: dict) -> None:
+    """
+    Record a steal attempt for a runner.
+
+    attempt dict fields:
+      success (bool), difficulty (float), base (str), date (str),
+      game_pk (int), pitcher_name (str), catcher_name (str),
+      pitch_type (str|None), pitch_speed (float|None),
+      pop_time (float|None), sprint_speed (float|None)
+    """
+    pid = str(player_id)
+    if pid not in state["steal_grades"]:
+        state["steal_grades"][pid] = {"name": name, "attempts": []}
+    entry = state["steal_grades"][pid]
+    # Keep name current (roster moves)
+    entry["name"] = name
+    entry["attempts"].append(attempt)
+
+
+def get_steal_grades(state: dict) -> dict:
+    """Return the full steal_grades dict keyed by player_id string."""
+    return state.get("steal_grades", {})
+
+
+def has_steal_event_posted(state: dict, fingerprint: str) -> bool:
+    return fingerprint in state.get("steal_events_posted", [])
+
+
+def record_steal_event_posted(state: dict, fingerprint: str) -> None:
+    posted = state.setdefault("steal_events_posted", [])
+    if fingerprint not in posted:
+        posted.append(fingerprint)
+    # Prune to last 1000 to prevent unbounded growth
+    if len(posted) > 1000:
+        state["steal_events_posted"] = posted[-1000:]
