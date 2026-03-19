@@ -40,7 +40,7 @@ def _build_embed(
             value=f"{label_prefix}: **{p['score']:.2f}**",
             inline=False,
         )
-    embed.set_footer(text="Luck score based on xBA (expected batting average) via Statcast")
+    embed.set_footer(text="Score = estimated hits added/lost (hitters) or hits allowed/saved (pitchers), weighted by xBA via Statcast")
     return embed
 
 
@@ -91,14 +91,14 @@ class LuckCog(commands.Cog, name="Luck"):
 
         hitter_embed = _build_embed(
             players=data["hitters"],
-            title=":crying_cat_face: Unluckiest Phillies Hitters",
+            title=":four_leaf_clover: 🚫 Unluckiest Phillies Hitters",
             description="Outs on batted balls that usually result in hits (highest xBA).",
             label_prefix="Unluck score",
             color=PHILLIES_RED,
         )
         pitcher_embed = _build_embed(
             players=data["pitchers"],
-            title=":crying_cat_face: Unluckiest Phillies Pitchers",
+            title=":four_leaf_clover: 🚫 Unluckiest Phillies Pitchers",
             description="Hits allowed on batted balls that usually result in outs (lowest xBA).",
             label_prefix="Unluck score",
             color=PHILLIES_BLUE,

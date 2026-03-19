@@ -1,5 +1,5 @@
 """
-Philly Ace Rating (PAR) — proprietary SP grading model for Phillies Therapy.
+Pitcher Ace Rating (PAR) — proprietary SP grading model for Phillies Therapy.
 
 Scale: 0–100
 Each component is scored 0–100 then weighted per Config.SCORE_WEIGHTS.
@@ -33,6 +33,7 @@ class PitcherGameData:
     game_date: str
     opponent: str
     home_away: str                  # "home" | "away"
+    is_spring_training: bool = False
 
     # Standard boxscore stats
     outs_recorded: int = 0          # e.g. 15 = 5.0 IP
@@ -271,7 +272,7 @@ def score_batted_ball_quality(data: PitcherGameData) -> float:
 
 def grade_pitcher(data: PitcherGameData) -> PARResult:
     """
-    Compute the Philly Ace Rating for a SP outing.
+    Compute the Pitcher Ace Rating for a SP outing.
     Returns a PARResult with per-component breakdown and overall score.
     """
     weights = Config.SCORE_WEIGHTS

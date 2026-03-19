@@ -1,5 +1,5 @@
 """
-Cog: SP Grader — Philly Ace Rating (PAR) monitoring and leaderboard commands.
+Cog: SP Grader — Pitcher Ace Rating (PAR) monitoring and leaderboard commands.
 
 Polls MLB live data every 2 minutes and posts a PAR grade embed whenever a
 Phillies starting pitcher exits. Also exposes /leaderboard and /par slash commands.
@@ -79,7 +79,7 @@ class SPGraderCog(commands.Cog, name="SPGrader"):
         name="par",
         description="Look up a pitcher's season PAR stats"
     )
-    @app_commands.describe(pitcher="Pitcher's name (partial match OK)")
+    @app_commands.describe(pitcher="Pitcher name (select from starters with 1+ games)")
     async def par(self, interaction: discord.Interaction, pitcher: str) -> None:
         await interaction.response.defer()
 
@@ -182,8 +182,29 @@ class SPGraderCog(commands.Cog, name="SPGrader"):
             description="\n".join(lines),
             color=0xE81828,
         )
-        embed.set_footer(text="Philly Ace Rating (PAR) · Phillies Therapy Bot")
+        embed.set_footer(text="Pitcher Ace Rating (PAR) · Phillies Therapy Bot")
         await interaction.followup.send(embed=embed)
+
+    @par.autocomplete("pitcher")
+    async def par_pitcher_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Return pitchers with 1+ recorded starts, sorted A-Z by last name."""
+        seen: dict[int, str] = {}
+        for r in self.monitor.leaderboard._records:
+            seen[r.pitcher_id] = r.pitcher_name
+
+        def _last_name(name: str) -> str:
+            parts = name.strip().split()
+            return parts[-1].lower() if parts else name.lower()
+
+        pitchers = sorted(seen.values(), key=_last_name)
+        if current:
+            pitchers = [p for p in pitchers if current.lower() in p.lower()]
+
+        return [app_commands.Choice(name=p, value=p) for p in pitchers[:25]]
 
 
 async def setup(bot: commands.Bot) -> None:
