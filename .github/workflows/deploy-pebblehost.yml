@@ -6,7 +6,7 @@ on:
       - main
       - master
     paths:
-      - "projects/phillies-bot/**"
+      - "projects/**"
       - "requirements.txt"
   workflow_dispatch:
 
