@@ -51,6 +51,7 @@ class MLBClient:
                 "sportId": 1,
                 "teamId": team_id,
                 "date": game_date,
+                "gameType": "S,R",
                 "hydrate": "linescore,decisions,pitchers",
             }
         )

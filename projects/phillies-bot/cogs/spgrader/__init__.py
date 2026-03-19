@@ -1,5 +1,5 @@
 """
-Cog: SP Grader — Philly Ace Rating (PAR) monitoring and leaderboard commands.
+Cog: SP Grader — Pitcher Ace Rating (PAR) monitoring and leaderboard commands.
 
 Polls MLB live data every 2 minutes and posts a PAR grade embed whenever a
 Phillies starting pitcher exits. Also exposes /leaderboard and /par slash commands.
@@ -182,7 +182,7 @@ class SPGraderCog(commands.Cog, name="SPGrader"):
             description="\n".join(lines),
             color=0xE81828,
         )
-        embed.set_footer(text="Philly Ace Rating (PAR) · Phillies Therapy Bot")
+        embed.set_footer(text="Pitcher Ace Rating (PAR) · Phillies Therapy Bot")
         await interaction.followup.send(embed=embed)
 
     @par.autocomplete("pitcher")

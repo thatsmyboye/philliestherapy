@@ -21,9 +21,10 @@ log = logging.getLogger("monitor")
 class TrackedGame:
     """Holds state for one Phillies game being monitored."""
 
-    def __init__(self, game_pk: int, game_date: str):
+    def __init__(self, game_pk: int, game_date: str, game_type: str = "R"):
         self.game_pk = game_pk
         self.game_date = game_date
+        self.game_type = game_type          # "R" = regular season, "S" = spring training
         self.sp_id: Optional[int] = None
         self.sp_name: Optional[str] = None
         self.sp_exited: bool = False        # starter has been replaced
@@ -55,7 +56,11 @@ class GameMonitor:
                 continue
 
             if game_pk not in self.tracked:
-                tg = TrackedGame(game_pk, date.today().isoformat())
+                tg = TrackedGame(
+                    game_pk,
+                    date.today().isoformat(),
+                    game_type=game.get("gameType", "R"),
+                )
                 self.tracked[game_pk] = tg
 
             tg = self.tracked[game_pk]
@@ -265,6 +270,7 @@ class GameMonitor:
             game_date=tg.game_date,
             opponent=opponent,
             home_away=tg.phillies_side,
+            is_spring_training=(tg.game_type == "S"),
             outs_recorded=outs,
             hits=bs_stats.get("hits", 0),
             runs=bs_stats.get("runs", 0),

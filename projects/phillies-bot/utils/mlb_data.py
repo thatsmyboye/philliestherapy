@@ -413,6 +413,66 @@ def get_phillies_roster() -> list[dict]:
         return []
 
 
+def get_phillies_roster_full() -> list[dict]:
+    """
+    Return the full Phillies 40-man roster including IL players (1-hour cache).
+
+    Each entry: {id, fullName, position, status_code, on_il, is_pitcher}
+    status_code examples: "A" = Active, "IL10", "IL15", "IL60" = injured list.
+    """
+    key = f"roster_full_{CURRENT_SEASON}"
+    cached = _cache_get(key, 3600)
+    if cached is not None:
+        return cached
+
+    try:
+        data = statsapi.get(
+            "roster",
+            {
+                "teamId": PHILLIES_TEAM_ID,
+                "rosterType": "40Man",
+                "season": CURRENT_SEASON,
+            },
+        )
+        players = []
+        for entry in data.get("roster", []):
+            status_code = entry.get("status", {}).get("code", "A")
+            position = entry.get("position", {}).get("abbreviation", "")
+            players.append({
+                "id": entry["person"]["id"],
+                "fullName": entry["person"]["fullName"],
+                "position": position,
+                "status_code": status_code,
+                "on_il": status_code not in ("A", ""),
+                "is_pitcher": position == "P",
+            })
+        _cache_set(key, players)
+        return players
+    except Exception:
+        return []
+
+
+def fetch_statcast_for_range(
+    mlbam_id: int,
+    player_type: str,
+    start: str,
+    end: str,
+) -> list[dict]:
+    """
+    Fetch Statcast rows for a player over a specific date range (no cache).
+
+    player_type: "batter" or "pitcher"
+    start / end:  YYYY-MM-DD strings (both inclusive)
+    """
+    game_type = get_game_type()
+    if player_type == "batter":
+        url = _statcast_batter_url(mlbam_id, start, end, game_type)
+    else:
+        url = _statcast_pitcher_url(mlbam_id, start, end, game_type)
+    rows = _fetch_statcast_csv(url)
+    return [r for r in rows if r.get("game_type") == game_type]
+
+
 # ---------------------------------------------------------------------------
 # Career / season stats via statsapi
 # ---------------------------------------------------------------------------

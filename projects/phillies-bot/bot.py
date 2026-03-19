@@ -37,6 +37,7 @@ COGS = [
     "cogs.monitor",
     "cogs.standings",
     "cogs.spgrader",
+    "cogs.trends",
 ]
 
 

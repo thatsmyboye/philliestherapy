@@ -52,9 +52,10 @@ def build_embed(result: PARResult, lb: Leaderboard) -> discord.Embed:
 
     # Header
     home_away_str = "vs" if data.home_away == "home" else "@"
+    opponent_str = f"{data.opponent} (ST)" if data.is_spring_training else data.opponent
     title = (
         f"{result.grade_emoji}  {result.pitcher_name}  |  "
-        f"PHI {home_away_str} {data.opponent}  ·  {data.game_date}"
+        f"PHI {home_away_str} {opponent_str}  ·  {data.game_date}"
     )
 
     embed = discord.Embed(
@@ -62,7 +63,7 @@ def build_embed(result: PARResult, lb: Leaderboard) -> discord.Embed:
         color=color,
         timestamp=datetime.utcnow(),
     )
-    embed.set_footer(text="Philly Ace Rating (PAR) · Phillies Therapy Bot")
+    embed.set_footer(text="Pitcher Ace Rating (PAR) · Phillies Therapy Bot")
 
     # ── Box Score Line ────────────────────────────────────────────────────────
     box = (
@@ -80,7 +81,7 @@ def build_embed(result: PARResult, lb: Leaderboard) -> discord.Embed:
     # ── PAR Score ─────────────────────────────────────────────────────────────
     bar = _par_bar(result.total_score, 12)
     embed.add_field(
-        name="🏟️ Philly Ace Rating (PAR)",
+        name="🏟️ Pitcher Ace Rating (PAR)",
         value=f"{result.total_score:.1f} / 100\n{bar}",
         inline=True,
     )
@@ -199,7 +200,7 @@ def build_leaderboard_embed(lb: Leaderboard, page: str = "averages") -> discord.
                 )
             embed.description = "\n".join(lines)
 
-    embed.set_footer(text="Philly Ace Rating (PAR) · Phillies Therapy Bot")
+    embed.set_footer(text="Pitcher Ace Rating (PAR) · Phillies Therapy Bot")
     return embed
 
 
