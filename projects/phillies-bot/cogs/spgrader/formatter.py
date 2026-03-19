@@ -79,11 +79,16 @@ def build_embed(result: PARResult, lb: Leaderboard) -> discord.Embed:
 
     # ── PAR Score ─────────────────────────────────────────────────────────────
     bar = _par_bar(result.total_score, 12)
-    par_str = (
-        f"**{result.total_score:.1f} / 100** — Grade: **{result.grade_letter}**\n"
-        f"{bar}  {result.grade_emoji}"
+    embed.add_field(
+        name="🏟️ Philly Ace Rating (PAR)",
+        value=f"{result.total_score:.1f} / 100\n{bar}",
+        inline=True,
     )
-    embed.add_field(name="🏟️ Philly Ace Rating (PAR)", value=par_str, inline=False)
+    embed.add_field(
+        name="📋 Grade",
+        value=f"**{result.grade_emoji}  {result.grade_letter}**",
+        inline=True,
+    )
 
     # ── Component Breakdown ───────────────────────────────────────────────────
     breakdown_lines = []
