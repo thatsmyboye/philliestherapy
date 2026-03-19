@@ -14,11 +14,13 @@ from __future__ import annotations
 import asyncio
 import os
 
+from pathlib import Path
+
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])
