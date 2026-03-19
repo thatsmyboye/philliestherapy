@@ -256,10 +256,12 @@ def top_exit_velos(mlbam_id: int, n: int = 3) -> list[dict]:
 _HIT_EVENTS = {"single", "double", "triple", "home_run"}
 
 
-def _hitter_luck_score(rows: list[dict], lucky: bool) -> float:
+def _hitter_luck_score(rows: list[dict]) -> float:
     """
-    lucky=True  → hits on low-xBA events (sum of 1 - xBA per hit)
-    lucky=False → outs on high-xBA events (sum of xBA per out)
+    Combined net hits added for a hitter:
+      +  hits on low-xBA events  (sum of 1 - xBA per lucky hit)
+      -  outs on high-xBA events (sum of xBA per unlucky out)
+    Positive = net lucky, negative = net unlucky.
     """
     total = 0.0
     for row in rows:
@@ -267,19 +269,19 @@ def _hitter_luck_score(rows: list[dict], lucky: bool) -> float:
         if xba is None:
             continue
         is_hit = row.get("events", "") in _HIT_EVENTS
-        if lucky:
-            if is_hit and xba < 0.250:
-                total += 1 - xba
-        else:
-            if not is_hit and row.get("events", "") and xba > 0.500:
-                total += xba
+        if is_hit and xba < 0.250:
+            total += 1 - xba
+        elif not is_hit and row.get("events", "") and xba > 0.500:
+            total -= xba
     return total
 
 
-def _pitcher_luck_score(rows: list[dict], lucky: bool) -> float:
+def _pitcher_luck_score(rows: list[dict]) -> float:
     """
-    lucky=True  → outs on high-xBA events (pitcher got lucky)
-    lucky=False → hits on low-xBA events (pitcher was unlucky)
+    Combined net hits saved for a pitcher:
+      +  outs on high-xBA events (sum of xBA per lucky out / hit saved)
+      -  hits on low-xBA events  (sum of 1 - xBA per unlucky hit allowed)
+    Positive = net lucky, negative = net unlucky.
     """
     total = 0.0
     for row in rows:
@@ -287,12 +289,10 @@ def _pitcher_luck_score(rows: list[dict], lucky: bool) -> float:
         if xba is None:
             continue
         is_hit = row.get("events", "") in _HIT_EVENTS
-        if lucky:
-            if not is_hit and row.get("events", "") and xba > 0.500:
-                total += xba
-        else:
-            if is_hit and xba < 0.250:
-                total += 1 - xba
+        if not is_hit and row.get("events", "") and xba > 0.500:
+            total += xba
+        elif is_hit and xba < 0.250:
+            total -= 1 - xba
     return total
 
 
@@ -326,8 +326,14 @@ def _get_phillies_pitcher_statcast() -> list[dict]:
 
 def get_phillies_luck(lucky: bool) -> dict[str, list[dict]]:
     """
-    Return {'hitters': [...], 'pitchers': [...]} with top-3 luckiest or unluckiest
-    Phillies players.
+    Return {'hitters': [...], 'pitchers': [...]} with the top-3 luckiest or
+    unluckiest Phillies players based on a combined net score.
+
+    Hitter score  = net hits added   (lucky hits − unlucky outs)
+    Pitcher score = net hits saved   (lucky outs − unlucky hits allowed)
+
+    lucky=True  → top 3 by highest score (most positive)
+    lucky=False → top 3 by lowest score  (most negative)
 
     Each entry: {'name': str, 'score': float, 'player_id': int}.
     """
@@ -357,9 +363,8 @@ def get_phillies_luck(lucky: bool) -> dict[str, list[dict]]:
         info = player_info.get(pid)
         if info is None or info["is_pitcher"]:
             continue
-        score = _hitter_luck_score(grp, lucky)
-        if score > 0:
-            hitter_scores.append({"name": info["name"], "score": round(score, 2), "player_id": pid})
+        score = _hitter_luck_score(grp)
+        hitter_scores.append({"name": info["name"], "score": round(score, 2), "player_id": pid})
 
     # --- Pitchers ---
     pitcher_rows = _get_phillies_pitcher_statcast()
@@ -378,12 +383,12 @@ def get_phillies_luck(lucky: bool) -> dict[str, list[dict]]:
         info = player_info.get(pid)
         if info is None or not info["is_pitcher"]:
             continue
-        score = _pitcher_luck_score(grp, lucky)
-        if score > 0:
-            pitcher_scores.append({"name": info["name"], "score": round(score, 2), "player_id": pid})
+        score = _pitcher_luck_score(grp)
+        pitcher_scores.append({"name": info["name"], "score": round(score, 2), "player_id": pid})
 
-    hitter_scores.sort(key=lambda x: x["score"], reverse=True)
-    pitcher_scores.sort(key=lambda x: x["score"], reverse=True)
+    # Luckiest: highest scores; Unluckiest: lowest scores
+    hitter_scores.sort(key=lambda x: x["score"], reverse=lucky)
+    pitcher_scores.sort(key=lambda x: x["score"], reverse=lucky)
     return {"hitters": hitter_scores[:3], "pitchers": pitcher_scores[:3]}
 
 

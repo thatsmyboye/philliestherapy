@@ -1,11 +1,17 @@
 """
 Cog: /luckiest and /unluckiest slash commands.
 
-Luck is measured using xBA (estimated_ba_using_speedangle) from Statcast:
-  - Hitter luck:   hits on batted balls with xBA < 0.250 (got hits they "shouldn't" have)
-  - Hitter unluck: outs on batted balls with xBA > 0.500 (made outs they "shouldn't" have)
-  - Pitcher luck:  outs on batted balls with xBA > 0.500 (got outs on balls that "should" be hits)
-  - Pitcher unluck:hits on batted balls with xBA < 0.250 (allowed hits that "should" be outs)
+Luck is measured using a combined net score derived from xBA (estimated_ba_using_speedangle):
+
+  Hitter score  = net hits added
+    + hits on batted balls with xBA < 0.250  (lucky hits)
+    − outs on batted balls with xBA > 0.500  (unlucky outs)
+
+  Pitcher score = net hits saved
+    + outs on batted balls with xBA > 0.500  (lucky outs / hits saved)
+    − hits on batted balls with xBA < 0.250  (unlucky hits allowed)
+
+Positive score → net lucky; negative score → net unlucky.
 """
 from __future__ import annotations
 
@@ -27,7 +33,7 @@ def _build_embed(
     players: list[dict],
     title: str,
     description: str,
-    label_prefix: str,
+    label: str,
     color: int,
 ) -> discord.Embed:
     embed = discord.Embed(title=title, description=description, color=color)
@@ -37,10 +43,10 @@ def _build_embed(
     for i, p in enumerate(players):
         embed.add_field(
             name=f"{_rank_emoji(i)}  {p['name']}",
-            value=f"{label_prefix}: **{p['score']:.2f}**",
+            value=f"{label}: **{p['score']:+.2f}**",
             inline=False,
         )
-    embed.set_footer(text="Score = estimated hits added/lost (hitters) or hits allowed/saved (pitchers), weighted by xBA via Statcast")
+    embed.set_footer(text="Score = net hits added (hitters) or net hits saved (pitchers), weighted by xBA via Statcast")
     return embed
 
 
@@ -63,15 +69,15 @@ class LuckCog(commands.Cog, name="Luck"):
         hitter_embed = _build_embed(
             players=data["hitters"],
             title=":four_leaf_clover: Luckiest Phillies Hitters",
-            description="Base hits on batted balls that usually result in outs (lowest xBA).",
-            label_prefix="Luck score",
+            description="Most cumulative hits added above expectation (xBA).",
+            label="Hits added",
             color=PHILLIES_RED,
         )
         pitcher_embed = _build_embed(
             players=data["pitchers"],
             title=":four_leaf_clover: Luckiest Phillies Pitchers",
-            description="Outs recorded on batted balls that usually result in hits (highest xBA).",
-            label_prefix="Luck score",
+            description="Most cumulative hits saved above expectation (xBA).",
+            label="Hits saved",
             color=PHILLIES_BLUE,
         )
 
@@ -91,16 +97,16 @@ class LuckCog(commands.Cog, name="Luck"):
 
         hitter_embed = _build_embed(
             players=data["hitters"],
-            title=":four_leaf_clover: 🚫 Unluckiest Phillies Hitters",
-            description="Outs on batted balls that usually result in hits (highest xBA).",
-            label_prefix="Unluck score",
+            title=":no_entry_sign: Unluckiest Phillies Hitters",
+            description="Most cumulative hits lost below expectation (xBA).",
+            label="Hits added",
             color=PHILLIES_RED,
         )
         pitcher_embed = _build_embed(
             players=data["pitchers"],
-            title=":four_leaf_clover: 🚫 Unluckiest Phillies Pitchers",
-            description="Hits allowed on batted balls that usually result in outs (lowest xBA).",
-            label_prefix="Unluck score",
+            title=":no_entry_sign: Unluckiest Phillies Pitchers",
+            description="Most cumulative hits allowed above expectation (xBA).",
+            label="Hits saved",
             color=PHILLIES_BLUE,
         )
 
