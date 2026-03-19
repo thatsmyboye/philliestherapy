@@ -22,8 +22,14 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
-TOKEN = os.environ["DISCORD_BOT_TOKEN"]
-GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])
+TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
+if not TOKEN:
+    raise SystemExit(
+        "[bot] DISCORD_BOT_TOKEN is not set. "
+        "Add it to GitHub Actions secrets and re-run the deploy workflow, "
+        "or write it to projects/phillies-bot/.env."
+    )
+GUILD_ID = int(os.environ.get("DISCORD_GUILD_ID", "0") or "0")
 
 COGS = [
     "cogs.velocity",
