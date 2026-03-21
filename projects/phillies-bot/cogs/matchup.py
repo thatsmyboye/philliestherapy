@@ -29,10 +29,21 @@ from utils.mlb_data import (
     get_opponent_roster_batters,
     get_phillies_roster_full,
     get_pitcher_statcast,
+    is_early_regular_season,
+    is_spring_training,
 )
 
 PHILLIES_RED = 0xE81828
 _RECENT_DAYS = 30
+
+
+def _season_mode_note() -> str:
+    """Return a contextual mode label for use in the embed footer."""
+    if is_spring_training():
+        return "🌸 Spring Training data"
+    if is_early_regular_season():
+        return "🔶 Early regular season — Statcast samples still building"
+    return ""
 _MIN_SEASON_PITCHES = 30   # min pitches per type to show in arsenal
 _MIN_RECENT_PITCHES = 15   # min pitches per type for delta indicators
 _MIN_HITTER_PITCHES = 8    # min pitches seen by a hitter for spotlight
@@ -509,10 +520,11 @@ class MatchupCog(commands.Cog, name="Matchup"):
                 inline=False,
             )
 
+        mode_tag = f" · {_season_mode_note()}" if _season_mode_note() else ""
         embed.set_footer(
             text=(
-                f"Last {_RECENT_DAYS}d window · Statcast via Baseball Savant · "
-                "Phillies Therapy Bot"
+                f"Last {_RECENT_DAYS}d window · Statcast via Baseball Savant"
+                f"{mode_tag} · Phillies Therapy Bot"
             )
         )
         await interaction.followup.send(embed=embed)

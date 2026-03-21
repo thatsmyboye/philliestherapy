@@ -59,6 +59,16 @@ def get_game_type() -> str:
     return "S" if is_spring_training() else "R"
 
 
+def is_early_regular_season(days: int = 21) -> bool:
+    """
+    Return True if today is within `days` days after the regular season start.
+    Useful for surfacing a low-sample-size caveat early in the year.
+    """
+    from datetime import timedelta
+    reg_start = date(date.today().year, 3, 25)
+    return reg_start <= date.today() < reg_start + timedelta(days=days)
+
+
 # Module-level alias kept for any external imports; prefer get_season_start() for
 # runtime-accurate values when the bot runs across the season boundary.
 SEASON_START = SPRING_TRAINING_START
