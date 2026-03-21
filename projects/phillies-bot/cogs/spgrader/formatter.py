@@ -30,6 +30,12 @@ def _par_bar(score: float, length: int = 10) -> str:
     return f"`{bar}`"
 
 
+def _par_bar_plain(score: float, length: int = 8) -> str:
+    """Return a plain-text progress bar (no backticks) for use inside code blocks."""
+    filled = round(score / 100 * length)
+    return "█" * filled + "░" * (length - filled)
+
+
 def _score_color(score: float) -> int:
     """Map PAR score to a Discord embed color."""
     if score >= 90:
@@ -151,16 +157,18 @@ def build_leaderboard_embed(lb: Leaderboard, page: str = "averages") -> discord.
         if not top:
             embed.description = "_No games recorded yet._"
         else:
-            medals = ["🥇", "🥈", "🥉"] + ["4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-            lines = []
+            NAME_W = 21
+            header = f"{'#':>3}  {'Name':<{NAME_W}}  {'Bar':<8}  {'Avg':>5}  {'G':>2}  {'Best':>5}"
+            sep = "─" * len(header)
+            rows = [header, sep]
             for i, entry in enumerate(top):
-                medal = medals[i] if i < len(medals) else f"{i+1}."
-                bar = _par_bar(entry["avg"], 8)
-                lines.append(
-                    f"{medal} **{entry['name']}**  {bar}  "
-                    f"`{entry['avg']:.1f}` avg  ·  {entry['games']}G  ·  best {entry['best']}"
+                name = entry["name"][:NAME_W]
+                bar = _par_bar_plain(entry["avg"], 8)
+                rows.append(
+                    f"{i+1:>3}  {name:<{NAME_W}}  {bar}  "
+                    f"{entry['avg']:>5.1f}  {entry['games']:>2}G  {entry['best']:>5.1f}"
                 )
-            embed.description = "\n".join(lines)
+            embed.description = "```\n" + "\n".join(rows) + "\n```"
 
     elif page == "individual":
         embed = discord.Embed(
@@ -172,15 +180,17 @@ def build_leaderboard_embed(lb: Leaderboard, page: str = "averages") -> discord.
         if not top:
             embed.description = "_No games recorded yet._"
         else:
-            medals = ["🥇", "🥈", "🥉"] + ["4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-            lines = []
+            NAME_W = 18
+            header = f"{'#':>3}  {'Name':<{NAME_W}}  {'Date':<10}  {'PAR':>5}  {'IP':>4}  {'K':>3}  {'BB':>3}  {'ER':>3}"
+            sep = "─" * len(header)
+            rows = [header, sep]
             for i, rec in enumerate(top):
-                medal = medals[i] if i < len(medals) else f"{i+1}."
-                lines.append(
-                    f"{medal} **{rec.pitcher_name}** vs {rec.opponent}  `{rec.game_date}`  ·  "
-                    f"**{rec.score:.1f}** PAR  ·  {rec.ip} IP  {rec.k}K/{rec.bb}BB  {rec.er}ER"
+                name = rec.pitcher_name[:NAME_W]
+                rows.append(
+                    f"{i+1:>3}  {name:<{NAME_W}}  {rec.game_date:<10}  "
+                    f"{rec.score:>5.1f}  {rec.ip:>4}  {rec.k:>3}  {rec.bb:>3}  {rec.er:>3}"
                 )
-            embed.description = "\n".join(lines)
+            embed.description = "```\n" + "\n".join(rows) + "\n```"
 
     else:  # cal — chronological recent-games view
         embed = discord.Embed(
@@ -192,13 +202,17 @@ def build_leaderboard_embed(lb: Leaderboard, page: str = "averages") -> discord.
         if not recent:
             embed.description = "_No games recorded yet._"
         else:
-            lines = []
+            NAME_W = 18
+            header = f"{'Date':<10}  {'Name':<{NAME_W}}  {'vs':>3}  {'PAR':>5}  {'Grd':<4}  {'IP':>4}  {'K':>3}  {'BB':>3}  {'ER':>3}"
+            sep = "─" * len(header)
+            rows = [header, sep]
             for rec in recent:
-                lines.append(
-                    f"📅 `{rec.game_date}` **{rec.pitcher_name}** vs {rec.opponent}  ·  "
-                    f"**{rec.score:.1f}** PAR ({rec.grade})  ·  {rec.ip} IP  {rec.k}K/{rec.bb}BB  {rec.er}ER"
+                name = rec.pitcher_name[:NAME_W]
+                rows.append(
+                    f"{rec.game_date:<10}  {name:<{NAME_W}}  {rec.opponent:>3}  "
+                    f"{rec.score:>5.1f}  {rec.grade:<4}  {rec.ip:>4}  {rec.k:>3}  {rec.bb:>3}  {rec.er:>3}"
                 )
-            embed.description = "\n".join(lines)
+            embed.description = "```\n" + "\n".join(rows) + "\n```"
 
     embed.set_footer(text="Pitcher Ace Rating (PAR) · Phillies Therapy Bot")
     return embed
