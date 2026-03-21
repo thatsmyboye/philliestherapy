@@ -38,6 +38,7 @@ COGS = [
     "cogs.standings",
     "cogs.spgrader",
     "cogs.trends",
+    "cogs.matchup",
     "cogs.steal_monitor",
 ]
 

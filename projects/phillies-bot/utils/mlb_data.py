@@ -544,6 +544,123 @@ def get_todays_phillies_games() -> list[dict]:
         return []
 
 
+def get_next_game_with_probables(days_ahead: int = 10) -> Optional[dict]:
+    """
+    Find the next upcoming Phillies game (within days_ahead days) that has at
+    least one probable pitcher announced.
+
+    Returns a dict with:
+      game_date, game_pk, status,
+      home_team / away_team: {id, name, abbreviation},
+      phi_is_home: bool,
+      phi_probable: {id, fullName} or None,
+      opp_probable: {id, fullName} or None,
+      opponent: {id, name, abbreviation}
+
+    Returns None if no game is found in the window.
+    """
+    today = date.today()
+    end = today + __import__("datetime").timedelta(days=days_ahead)
+    try:
+        data = statsapi.get(
+            "schedule",
+            {
+                "sportId": 1,
+                "teamId": PHILLIES_TEAM_ID,
+                "startDate": today.strftime("%Y-%m-%d"),
+                "endDate": end.strftime("%Y-%m-%d"),
+                "gameType": "S,R",
+                "hydrate": "probablePitcher,team",
+            },
+        )
+    except Exception:
+        return None
+
+    terminal = {"Final", "Game Over", "Completed Early"}
+    for date_entry in data.get("dates", []):
+        for game in date_entry.get("games", []):
+            status = game.get("status", {}).get("detailedState", "")
+            if status in terminal:
+                continue
+
+            home = game.get("teams", {}).get("home", {})
+            away = game.get("teams", {}).get("away", {})
+
+            home_id = home.get("team", {}).get("id")
+            phi_is_home = home_id == PHILLIES_TEAM_ID
+
+            phi_side = home if phi_is_home else away
+            opp_side = away if phi_is_home else home
+
+            phi_prob = phi_side.get("probablePitcher")
+            opp_prob = opp_side.get("probablePitcher")
+
+            opp_team = opp_side.get("team", {})
+
+            return {
+                "game_date": date_entry.get("date", ""),
+                "game_pk": game.get("gamePk"),
+                "status": status,
+                "phi_is_home": phi_is_home,
+                "phi_probable": (
+                    {"id": phi_prob["id"], "fullName": phi_prob["fullName"]}
+                    if phi_prob else None
+                ),
+                "opp_probable": (
+                    {"id": opp_prob["id"], "fullName": opp_prob["fullName"]}
+                    if opp_prob else None
+                ),
+                "opponent": {
+                    "id": opp_team.get("id"),
+                    "name": opp_team.get("name", "Opponent"),
+                    "abbreviation": opp_team.get("abbreviation", "OPP"),
+                },
+                "home_team": {
+                    "id": home.get("team", {}).get("id"),
+                    "name": home.get("team", {}).get("name", ""),
+                    "abbreviation": home.get("team", {}).get("abbreviation", ""),
+                },
+                "away_team": {
+                    "id": away.get("team", {}).get("id"),
+                    "name": away.get("team", {}).get("name", ""),
+                    "abbreviation": away.get("team", {}).get("abbreviation", ""),
+                },
+            }
+    return None
+
+
+def get_opponent_roster_batters(team_id: int) -> list[dict]:
+    """
+    Return the active roster non-pitchers (hitters) for any team (1-hour cache).
+
+    Each entry: {id, fullName, position}
+    """
+    key = f"opp_roster_batters_{team_id}_{CURRENT_SEASON}"
+    cached = _cache_get(key, 3600)
+    if cached is not None:
+        return cached
+
+    try:
+        data = statsapi.get(
+            "roster",
+            {"teamId": team_id, "rosterType": "active", "season": CURRENT_SEASON},
+        )
+        players = []
+        for entry in data.get("roster", []):
+            pos = entry.get("position", {}).get("abbreviation", "")
+            if pos == "P":
+                continue
+            players.append({
+                "id": entry["person"]["id"],
+                "fullName": entry["person"]["fullName"],
+                "position": pos,
+            })
+        _cache_set(key, players)
+        return players
+    except Exception:
+        return []
+
+
 # ---------------------------------------------------------------------------
 # Stolen base Statcast leaderboards
 # ---------------------------------------------------------------------------
