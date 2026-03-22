@@ -40,6 +40,7 @@ COGS = [
     "cogs.trends",
     "cogs.matchup",
     "cogs.steal_monitor",
+    "cogs.getaway",
 ]
 
 
