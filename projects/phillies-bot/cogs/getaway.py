@@ -38,7 +38,7 @@ from utils.mlb_data import (
     is_early_regular_season,
     is_spring_training,
 )
-from utils.player_lookup import resolve_player
+from utils.player_lookup import get_player_name_by_id, resolve_player
 
 PHILLIES_RED = 0xE81828
 
@@ -411,6 +411,7 @@ def _analyze_getaway(rows: list[dict], pitch_type_filter: Optional[str] = None) 
             "velo":        velo,
             "velo_delta":  (velo - avg_v) if (velo and avg_v) else None,
             "zone_desc":   zone_desc,
+            "batter_id":   _to_int(row.get("batter", 0)),
             "break_delta": break_delta,
             "outcome":     outcome,
             "escape_rv":   p["escape_rv"],
@@ -532,10 +533,25 @@ class GetAwayCog(commands.Cog, name="GetAway"):
         # ── Top individual escapes ───────────────────────────────────────────
         top = result["top_escapes"]
         if top:
+            # Resolve batter names (first initial + last name) for display
+            batter_labels: dict[int, str] = {}
+            for e in top:
+                bid = e.get("batter_id") or 0
+                if bid and bid not in batter_labels:
+                    full = await asyncio.to_thread(get_player_name_by_id, bid)
+                    if full:
+                        parts = full.strip().split()
+                        batter_labels[bid] = f"{parts[0][0]}. {parts[-1]}" if len(parts) >= 2 else full
+
             lines = []
             for i, e in enumerate(top, 1):
-                # Velocity line
+                # Velocity line with pitch type abbreviation
+                pt_abbr = e["pitch_type"] or ""
                 velo_str = f"{e['velo']:.1f} mph" if e["velo"] else ""
+                if pt_abbr and velo_str:
+                    velo_str = f"{pt_abbr} {velo_str}"
+                elif pt_abbr:
+                    velo_str = pt_abbr
                 if e["velo_delta"] is not None:
                     sign = "+" if e["velo_delta"] >= 0 else ""
                     velo_str += f" ({sign}{e['velo_delta']:.1f})"
@@ -546,6 +562,11 @@ class GetAwayCog(commands.Cog, name="GetAway"):
                     sign = "+" if e["break_delta"] >= 0 else ""
                     brk_str = f" · Break {sign}{e['break_delta']:.1f} in"
 
+                # Location with opposing hitter
+                bid = e.get("batter_id") or 0
+                hitter_str = f" to {batter_labels[bid]}" if bid and bid in batter_labels else ""
+                zone_line = (f"\n   📍 {e['zone_desc']}{hitter_str}" if e["zone_desc"] else "")
+
                 count_str = (
                     f" · {e['count']} count" if e["count"] not in ("0-0", "") else ""
                 )
@@ -554,7 +575,7 @@ class GetAwayCog(commands.Cog, name="GetAway"):
                 line = (
                     f"**{i}. {e['date']}** — {e['label']}"
                     + (f" · {velo_str}" if velo_str else "")
-                    + (f"\n   📍 {e['zone_desc']}" if e["zone_desc"] else "")
+                    + zone_line
                     + brk_str
                     + f"\n   ↳ {e['outcome']}{count_str}{inn_str}"
                     + f" · RE saved: {e['escape_rv']:+.2f} · Badness: {e['badness']:.0f}"
@@ -564,7 +585,7 @@ class GetAwayCog(commands.Cog, name="GetAway"):
             field_val = "\n".join(lines)
             if len(field_val) > 1024:
                 field_val = field_val[:1021] + "..."
-            embed.add_field(name="💀 Top Gets Away", value=field_val, inline=False)
+            embed.add_field(name="💀 Top Get-aways", value=field_val, inline=False)
 
         # ── Per-pitch-type breakdown ─────────────────────────────────────────
         by_type = result["by_type"]
