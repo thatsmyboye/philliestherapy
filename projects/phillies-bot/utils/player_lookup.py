@@ -90,3 +90,15 @@ def resolve_player(
     mlbam_id = int(top["id"])
     full_name = f"{top.get('firstName', '').title()} {top.get('lastName', '').title()}".strip()
     return mlbam_id, full_name, None
+
+
+def get_player_name_by_id(mlbam_id: int) -> Optional[str]:
+    """Return a player's full name given their MLBAM ID, or None on failure."""
+    try:
+        data = statsapi.get("person", {"personId": mlbam_id})
+        people = data.get("people", [])
+        if people:
+            return people[0].get("fullName")
+    except Exception:
+        pass
+    return None
