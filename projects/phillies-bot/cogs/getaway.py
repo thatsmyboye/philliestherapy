@@ -467,19 +467,19 @@ class GetAwayCog(commands.Cog, name="GetAway"):
         ),
     )
     @app_commands.describe(
-        pitcher_name="Pitcher's name (first, last, or full)",
+        pitcher="Pitcher name (select from pitchers with available data)",
         pitch_type="Optional: filter analysis to a specific pitch type",
     )
     @app_commands.choices(pitch_type=_PITCH_CHOICES)
     async def getaway(
         self,
         interaction: discord.Interaction,
-        pitcher_name: str,
+        pitcher: str,
         pitch_type: Optional[app_commands.Choice[str]] = None,
     ) -> None:
         await interaction.response.defer()
 
-        mlbam_id, full_name, error = resolve_player(pitcher_name, require_pitcher=True)
+        mlbam_id, full_name, error = resolve_player(pitcher, require_pitcher=True)
         if error:
             await interaction.followup.send(f"**Error:** {error}", ephemeral=True)
             return
@@ -593,6 +593,31 @@ class GetAwayCog(commands.Cog, name="GetAway"):
         ]
         embed.set_footer(text=" · ".join(p for p in footer_parts if p))
         await interaction.followup.send(embed=embed)
+
+    @getaway.autocomplete("pitcher")
+    async def getaway_pitcher_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Return pitchers with 1+ recorded PAR starts, sorted A-Z by last name."""
+        spgrader = self.bot.cogs.get("SPGrader")
+        if spgrader is None:
+            return []
+
+        seen: dict[int, str] = {}
+        for r in spgrader.monitor.leaderboard._records:
+            seen[r.pitcher_id] = r.pitcher_name
+
+        def _last_name(name: str) -> str:
+            parts = name.strip().split()
+            return parts[-1].lower() if parts else name.lower()
+
+        pitchers = sorted(seen.values(), key=_last_name)
+        if current:
+            pitchers = [p for p in pitchers if current.lower() in p.lower()]
+
+        return [app_commands.Choice(name=p, value=p) for p in pitchers[:25]]
 
 
 async def setup(bot: commands.Bot) -> None:
