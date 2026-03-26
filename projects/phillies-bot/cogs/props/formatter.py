@@ -33,6 +33,8 @@ def fmt_val(val: Optional[float], stat: str) -> str:
         full = int(val)
         outs = round((val - full) * 3)
         return f"{full}.{outs}"
+    if stat == "era":
+        return f"{val:.2f}"
     if stat in RATE_STATS:
         # Baseball convention: .300 below 1.000, 1.050 at or above 1.000
         formatted = f"{val:.3f}"
