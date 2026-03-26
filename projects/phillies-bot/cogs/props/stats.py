@@ -146,6 +146,16 @@ STAT_DEFINITIONS: dict[str, dict] = {
         "game_pitching_key": None,
         "season_pitching_key": "gamesStarted",
     },
+    # ── Pitcher rate stats ────────────────────────────────────────────────────
+    # Season value comes from statsapi as a string like "3.45".
+    # Game value is computed from the live boxscore earned runs and innings pitched.
+    "era": {
+        "display": "ERA",
+        "game_batting_key": None,
+        "season_batting_key": None,
+        "game_pitching_key": "__COMPUTED_ERA__",
+        "season_pitching_key": "era",
+    },
 }
 
 # Stats that are only meaningful as season props (no per-game tracking).
@@ -192,6 +202,9 @@ def get_game_stats(feed: dict, player_id: int, stat: str) -> Optional[float]:
         if game_pkey:
             pitching = player_stats.get("pitching", {})
             if pitching:
+                computed = _compute_game_pitching(pitching, game_pkey)
+                if computed is not None:
+                    return computed
                 val = pitching.get(game_pkey)
                 if val is not None:
                     return _coerce(val, stat)
@@ -298,6 +311,19 @@ def _compute_game_batting(batting: dict, key: str) -> Optional[float]:
         tb  = h + d + 2 * t + 3 * hr
         slg = tb / ab if ab else 0.0
         return round(obp + slg, 3)
+
+    return None  # Not a computed key
+
+
+def _compute_game_pitching(pitching: dict, key: str) -> Optional[float]:
+    """
+    Handle __COMPUTED_*__ keys for pitching stats that require arithmetic.
+    Returns None if the key is not a computed sentinel (caller falls through to direct lookup).
+    """
+    if key == "__COMPUTED_ERA__":
+        er = int(pitching.get("earnedRuns", 0) or 0)
+        ip = parse_ip(str(pitching.get("inningsPitched", "0") or "0"))
+        return round((er / ip) * 9, 2) if ip else 0.0
 
     return None  # Not a computed key
 
