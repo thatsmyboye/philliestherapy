@@ -15,6 +15,19 @@ from thefuzz import fuzz
 # Ohtani has a single MLBAM ID used for both pitching and hitting queries.
 OHTANI_ID = 660271
 
+# Hard-coded overrides for players whose common/preferred names differ from their
+# legal names or who are otherwise difficult to resolve via fuzzy search alone.
+# Maps normalized common name → (mlbam_id, display_name)
+_PLAYER_OVERRIDES: dict[str, tuple[int, str]] = {
+    "zack wheeler": (554430, "Zack Wheeler"),
+    "zachary wheeler": (554430, "Zack Wheeler"),
+    "adolis garcia": (677594, "Adolis Garcia"),
+    "jose adolis garcia": (677594, "Adolis Garcia"),
+    "jt realmuto": (592663, "J.T. Realmuto"),
+    "j t realmuto": (592663, "J.T. Realmuto"),
+    "jacob realmuto": (592663, "J.T. Realmuto"),
+}
+
 
 def _normalize(name: str) -> str:
     return re.sub(r"[^a-z ]", "", name.lower().strip())
@@ -35,6 +48,14 @@ def resolve_player(
     primary position includes pitching or hitting respectively.
     """
     name = name.strip()
+
+    # Check hardcoded overrides before hitting the API — handles common-name /
+    # nickname mismatches (e.g. "Adolis Garcia" vs legal "Jose Garcia").
+    norm = _normalize(name)
+    if norm in _PLAYER_OVERRIDES:
+        mlbam_id, display_name = _PLAYER_OVERRIDES[norm]
+        return mlbam_id, display_name, None
+
     parts = name.split()
 
     # Try last-name-only for single tokens, last+first for multi-token.
@@ -55,11 +76,19 @@ def resolve_player(
         return None, None, f'No player found matching "{name}". Try a different spelling.'
 
     # Score each candidate with fuzzy matching against the full input name.
+    # Score against both legal name and useName (preferred/nickname) so that
+    # e.g. "Nick" matches a player whose legal first name is "Nicholas".
     norm_input = _normalize(name)
     scored: list[tuple[int, dict]] = []
     for p in candidates:
-        full = f"{p.get('firstName', '')} {p.get('lastName', '')}".strip()
-        score = fuzz.token_sort_ratio(norm_input, _normalize(full))
+        legal_full = f"{p.get('firstName', '')} {p.get('lastName', '')}".strip()
+        use_first = p.get("useName") or p.get("firstName", "")
+        use_last = p.get("useLastName") or p.get("lastName", "")
+        use_full = f"{use_first} {use_last}".strip()
+        score = max(
+            fuzz.token_sort_ratio(norm_input, _normalize(legal_full)),
+            fuzz.token_sort_ratio(norm_input, _normalize(use_full)),
+        )
         scored.append((score, p))
     scored.sort(key=lambda x: x[0], reverse=True)
 
@@ -88,7 +117,11 @@ def resolve_player(
 
     _, top = scored[0]
     mlbam_id = int(top["id"])
-    full_name = f"{top.get('firstName', '').title()} {top.get('lastName', '').title()}".strip()
+    # Prefer useName / useLastName over legal first/last for display so players
+    # are shown by their preferred names (e.g. "Adolis" not "Jose").
+    first = top.get("useName") or top.get("firstName", "")
+    last = top.get("useLastName") or top.get("lastName", "")
+    full_name = f"{first.title()} {last.title()}".strip()
     return mlbam_id, full_name, None
 
 
