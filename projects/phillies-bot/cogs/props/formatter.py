@@ -10,7 +10,7 @@ import discord
 
 from .stats import RATE_STATS, STAT_DEFINITIONS, parse_ip
 
-# Status → display
+# Status → display (standard props)
 _EMOJI = {
     "over":    "✅",
     "under":   "⏳",
@@ -22,6 +22,14 @@ _LABEL = {
     "under":   "under",
     "push":    "PUSH",
     "no_data": "—",
+}
+
+# Status → display (comparative props)
+_COMP_EMOJI = {
+    "p1_leading": "🏆",
+    "p2_leading": "🏆",
+    "tied":       "🤝",
+    "no_data":    "⚫",
 }
 
 
@@ -82,16 +90,25 @@ def make_scoreboard_embed(prop_values: list[dict]) -> discord.Embed:
     """
     Build the live scoreboard embed.
 
-    prop_values is a list of dicts:
+    prop_values is a list of dicts. Two formats are supported:
+
+    Standard prop:
         { "prop": dict, "current_value": float|None, "status": str, "game_pk": int|None }
+
+    Comparative prop (prop["type"] == "comparative"):
+        { "prop": dict, "value1": float|None, "value2": float|None,
+          "status": str, "game_pk": int|None }
     """
     embed = discord.Embed(
         title=f"📊 Props Scoreboard  —  {datetime.now().strftime('%B %-d, %Y')}",
         color=discord.Color.blue(),
     )
 
-    game_props   = [pv for pv in prop_values if pv["prop"]["scope"] == "game"]
-    season_props = [pv for pv in prop_values if pv["prop"]["scope"] == "season"]
+    standard = [pv for pv in prop_values if pv["prop"].get("type") != "comparative"]
+    comparative = [pv for pv in prop_values if pv["prop"].get("type") == "comparative"]
+
+    game_props   = [pv for pv in standard if pv["prop"]["scope"] == "game"]
+    season_props = [pv for pv in standard if pv["prop"]["scope"] == "season"]
 
     def _row(pv: dict) -> str:
         prop = pv["prop"]
@@ -104,6 +121,32 @@ def make_scoreboard_embed(prop_values: list[dict]) -> discord.Embed:
         return (
             f"{emoji} **{prop['player_name']}** — {stat_display} "
             f"O/U {line_str} | {val_str} — {label}"
+        )
+
+    def _comp_row(pv: dict) -> str:
+        prop = pv["prop"]
+        stat1 = prop["player1_stat"]
+        stat2 = prop["player2_stat"]
+        stat1_display = STAT_DEFINITIONS[stat1]["display"]
+        stat2_display = STAT_DEFINITIONS[stat2]["display"]
+        v1 = fmt_val(pv["value1"], stat1)
+        v2 = fmt_val(pv["value2"], stat2)
+        status = pv["status"]
+        emoji = _COMP_EMOJI[status]
+
+        if status == "p1_leading":
+            result = f"**{prop['player1_name']} leading**"
+        elif status == "p2_leading":
+            result = f"**{prop['player2_name']} leading**"
+        elif status == "tied":
+            result = "**Tied**"
+        else:
+            result = "—"
+
+        return (
+            f"{emoji} **{prop['player1_name']}** {stat1_display} ({v1})"
+            f" vs **{prop['player2_name']}** {stat2_display} ({v2})"
+            f" → {result}"
         )
 
     if game_props:
@@ -120,7 +163,14 @@ def make_scoreboard_embed(prop_values: list[dict]) -> discord.Embed:
             inline=False,
         )
 
-    if not game_props and not season_props:
+    if comparative:
+        embed.add_field(
+            name="⚖️ Comparisons",
+            value="\n".join(_comp_row(pv) for pv in comparative),
+            inline=False,
+        )
+
+    if not game_props and not season_props and not comparative:
         embed.description = "No props configured yet. Use `/prop add` to get started."
 
     embed.set_footer(text=f"Updated {datetime.now().strftime('%-I:%M %p')}")
