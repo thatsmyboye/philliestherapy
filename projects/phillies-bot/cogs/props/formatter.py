@@ -8,7 +8,7 @@ from typing import Optional
 
 import discord
 
-from .stats import STAT_DEFINITIONS, parse_ip
+from .stats import RATE_STATS, STAT_DEFINITIONS, parse_ip
 
 # Status → display
 _EMOJI = {
@@ -33,6 +33,10 @@ def fmt_val(val: Optional[float], stat: str) -> str:
         full = int(val)
         outs = round((val - full) * 3)
         return f"{full}.{outs}"
+    if stat in RATE_STATS:
+        # Baseball convention: .300 below 1.000, 1.050 at or above 1.000
+        formatted = f"{val:.3f}"
+        return formatted.lstrip("0") if val < 1.0 else formatted
     if val == int(val):
         return str(int(val))
     return f"{val:.1f}"

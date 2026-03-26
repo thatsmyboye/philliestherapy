@@ -19,8 +19,8 @@ from utils.mlb_data import _cache_get, _cache_set, CURRENT_SEASON
 #   game_pitching_key   — key in live boxscore pitching stats dict (None = N/A)
 #   season_pitching_key — key in statsapi season pitching stats (None = N/A)
 #
-# Special value "__COMPUTED_TB__" for total_bases triggers manual computation
-# from the game boxscore since totalBases isn't always present per-game.
+# Special "__COMPUTED_*__" values trigger manual computation in get_game_stats
+# since those stats aren't directly present in the per-game boxscore.
 
 STAT_DEFINITIONS: dict[str, dict] = {
     "hits": {
@@ -107,10 +107,52 @@ STAT_DEFINITIONS: dict[str, dict] = {
         "game_pitching_key": "inningsPitched",
         "season_pitching_key": "inningsPitched",
     },
+    # ── Rate stats ────────────────────────────────────────────────────────────
+    # Season values come directly from statsapi as strings like ".325".
+    # Game values are computed from the live boxscore.
+    "avg": {
+        "display": "AVG",
+        "game_batting_key": "__COMPUTED_AVG__",
+        "season_batting_key": "avg",
+        "game_pitching_key": None,
+        "season_pitching_key": None,
+    },
+    "obp": {
+        "display": "OBP",
+        "game_batting_key": "__COMPUTED_OBP__",
+        "season_batting_key": "obp",
+        "game_pitching_key": None,
+        "season_pitching_key": None,
+    },
+    "slg": {
+        "display": "SLG",
+        "game_batting_key": "__COMPUTED_SLG__",
+        "season_batting_key": "slg",
+        "game_pitching_key": None,
+        "season_pitching_key": None,
+    },
+    "ops": {
+        "display": "OPS",
+        "game_batting_key": "__COMPUTED_OPS__",
+        "season_batting_key": "ops",
+        "game_pitching_key": None,
+        "season_pitching_key": None,
+    },
+    # ── Pitcher counting stats ────────────────────────────────────────────────
+    "games_started": {
+        "display": "Games Started",
+        "game_batting_key": None,
+        "season_batting_key": None,
+        "game_pitching_key": None,
+        "season_pitching_key": "gamesStarted",
+    },
 }
 
 # Stats that are only meaningful as season props (no per-game tracking).
-SEASON_ONLY_STATS = {"wins"}
+SEASON_ONLY_STATS = {"wins", "games_started"}
+
+# Stats whose values are rates (displayed as .300 rather than whole numbers).
+RATE_STATS = {"avg", "obp", "slg", "ops"}
 
 
 def get_game_stats(feed: dict, player_id: int, stat: str) -> Optional[float]:
@@ -138,12 +180,9 @@ def get_game_stats(feed: dict, player_id: int, stat: str) -> Optional[float]:
         if game_bkey:
             batting = player_stats.get("batting", {})
             if batting:
-                if game_bkey == "__COMPUTED_TB__":
-                    h  = int(batting.get("hits", 0) or 0)
-                    d  = int(batting.get("doubles", 0) or 0)
-                    t  = int(batting.get("triples", 0) or 0)
-                    hr = int(batting.get("homeRuns", 0) or 0)
-                    return float(h + d + 2 * t + 3 * hr)
+                computed = _compute_game_batting(batting, game_bkey)
+                if computed is not None:
+                    return computed
                 val = batting.get(game_bkey)
                 if val is not None:
                     return _coerce(val, stat)
@@ -208,6 +247,59 @@ def get_season_stats(player_id: int, stat: str) -> Optional[float]:
             return _coerce(val, stat)
 
     return None
+
+
+def _compute_game_batting(batting: dict, key: str) -> Optional[float]:
+    """
+    Handle __COMPUTED_*__ keys that require arithmetic over multiple boxscore fields.
+    Returns None if the key is not a computed sentinel (caller falls through to direct lookup).
+    """
+    if key == "__COMPUTED_TB__":
+        h  = int(batting.get("hits", 0) or 0)
+        d  = int(batting.get("doubles", 0) or 0)
+        t  = int(batting.get("triples", 0) or 0)
+        hr = int(batting.get("homeRuns", 0) or 0)
+        return float(h + d + 2 * t + 3 * hr)
+
+    if key == "__COMPUTED_AVG__":
+        ab = int(batting.get("atBats", 0) or 0)
+        h  = int(batting.get("hits", 0) or 0)
+        return round(h / ab, 3) if ab else 0.0
+
+    if key == "__COMPUTED_OBP__":
+        ab  = int(batting.get("atBats", 0) or 0)
+        h   = int(batting.get("hits", 0) or 0)
+        bb  = int(batting.get("baseOnBalls", 0) or 0)
+        hbp = int(batting.get("hitByPitch", 0) or 0)
+        sf  = int(batting.get("sacFlies", 0) or 0)
+        denom = ab + bb + hbp + sf
+        return round((h + bb + hbp) / denom, 3) if denom else 0.0
+
+    if key == "__COMPUTED_SLG__":
+        ab = int(batting.get("atBats", 0) or 0)
+        h  = int(batting.get("hits", 0) or 0)
+        d  = int(batting.get("doubles", 0) or 0)
+        t  = int(batting.get("triples", 0) or 0)
+        hr = int(batting.get("homeRuns", 0) or 0)
+        tb = h + d + 2 * t + 3 * hr
+        return round(tb / ab, 3) if ab else 0.0
+
+    if key == "__COMPUTED_OPS__":
+        ab  = int(batting.get("atBats", 0) or 0)
+        h   = int(batting.get("hits", 0) or 0)
+        d   = int(batting.get("doubles", 0) or 0)
+        t   = int(batting.get("triples", 0) or 0)
+        hr  = int(batting.get("homeRuns", 0) or 0)
+        bb  = int(batting.get("baseOnBalls", 0) or 0)
+        hbp = int(batting.get("hitByPitch", 0) or 0)
+        sf  = int(batting.get("sacFlies", 0) or 0)
+        obp_denom = ab + bb + hbp + sf
+        obp = (h + bb + hbp) / obp_denom if obp_denom else 0.0
+        tb  = h + d + 2 * t + 3 * hr
+        slg = tb / ab if ab else 0.0
+        return round(obp + slg, 3)
+
+    return None  # Not a computed key
 
 
 def parse_ip(ip_str: str) -> float:
