@@ -41,6 +41,7 @@ COGS = [
     "cogs.matchup",
     "cogs.steal_monitor",
     "cogs.getaway",
+    "cogs.props",
 ]
 
 
