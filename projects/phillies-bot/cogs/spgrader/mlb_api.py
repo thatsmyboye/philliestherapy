@@ -130,6 +130,127 @@ class MLBClient:
             rows.append(row)
         return rows
 
+    # ─── League-wide starter stats ────────────────────────────────────────────
+
+    async def get_league_starters_by_date(self, game_date: str) -> list[dict]:
+        """
+        Return a list of starting pitcher stats for all MLB games on the given
+        date (YYYY-MM-DD).  Each entry is a dict with keys:
+          name, team, ip, k, bb, er, h, pitches, win, loss
+        Only includes pitchers who recorded at least 1 out.
+        """
+        data = await self.get(
+            f"{BASE}/schedule",
+            params={
+                "sportId": 1,
+                "date": game_date,
+                "gameType": "R",
+                "hydrate": "boxscore,pitchers,decisions",
+            }
+        )
+
+        starters = []
+        for date_entry in data.get("dates", []):
+            for game in date_entry.get("games", []):
+                status = game.get("status", {}).get("abstractGameState", "")
+                if status not in ("Live", "Final"):
+                    continue
+                game_pk = game["gamePk"]
+                teams = game.get("teams", {})
+                try:
+                    bs_data = await self.get(f"{BASE}/game/{game_pk}/boxscore")
+                except Exception:
+                    continue
+
+                for side in ("home", "away"):
+                    team_abbrev = teams.get(side, {}).get("team", {}).get("abbreviation", "???")
+                    bs_team = bs_data.get("teams", {}).get(side, {})
+                    pitcher_ids = bs_team.get("pitchers", [])
+                    if not pitcher_ids:
+                        continue
+                    starter_id = pitcher_ids[0]
+                    players = bs_team.get("players", {})
+                    key = f"ID{starter_id}"
+                    if key not in players:
+                        continue
+                    player = players[key]
+                    stats = player.get("stats", {}).get("pitching", {})
+                    if not stats or stats.get("outs", 0) < 1:
+                        continue
+                    ip_str = stats.get("inningsPitched", "0.0")
+                    name = player.get("person", {}).get("fullName", "Unknown")
+
+                    # Determine W/L from game decisions
+                    decisions = game.get("decisions", {})
+                    win_id = decisions.get("winner", {}).get("id")
+                    loss_id = decisions.get("loser", {}).get("id")
+                    result_str = "W" if starter_id == win_id else ("L" if starter_id == loss_id else "")
+
+                    starters.append({
+                        "name": name,
+                        "team": team_abbrev,
+                        "ip": ip_str,
+                        "k": stats.get("strikeOuts", 0),
+                        "bb": stats.get("baseOnBalls", 0),
+                        "er": stats.get("earnedRuns", 0),
+                        "h": stats.get("hits", 0),
+                        "pitches": stats.get("pitchesThrown", 0),
+                        "result": result_str,
+                    })
+
+        # Sort: most IP first, then most Ks
+        def _sort_key(s):
+            parts = str(s["ip"]).split(".")
+            outs = int(parts[0]) * 3 + (int(parts[1]) if len(parts) > 1 else 0)
+            return (outs, s["k"])
+
+        starters.sort(key=_sort_key, reverse=True)
+        return starters
+
+    async def get_league_season_pitching_leaders(self, season: int, limit: int = 15) -> list[dict]:
+        """
+        Return the top starting pitcher season lines ranked by innings pitched.
+        Each entry: name, team, ip, era, k, bb, w, l, games
+        """
+        data = await self.get(
+            f"{BASE}/stats",
+            params={
+                "stats": "season",
+                "group": "pitching",
+                "gameType": "R",
+                "season": season,
+                "sportId": 1,
+                "playerPool": "all",
+                "limit": limit,
+                "sortStat": "inningsPitched",
+                "fields": (
+                    "stats,splits,stat,player,team,"
+                    "inningsPitched,era,strikeOuts,baseOnBalls,"
+                    "wins,losses,gamesStarted"
+                ),
+            }
+        )
+        leaders = []
+        for split in data.get("stats", [{}])[0].get("splits", []):
+            stat = split.get("stat", {})
+            player = split.get("player", {})
+            team = split.get("team", {})
+            gs = stat.get("gamesStarted", 0)
+            if gs < 1:
+                continue
+            leaders.append({
+                "name": player.get("fullName", "Unknown"),
+                "team": team.get("abbreviation", "???"),
+                "ip": stat.get("inningsPitched", "0.0"),
+                "era": stat.get("era", "-.--"),
+                "k": stat.get("strikeOuts", 0),
+                "bb": stat.get("baseOnBalls", 0),
+                "w": stat.get("wins", 0),
+                "l": stat.get("losses", 0),
+                "gs": gs,
+            })
+        return leaders
+
     # ─── Play-by-play (for CSW%) ─────────────────────────────────────────────
 
     async def get_pitcher_plays(self, game_pk: int, pitcher_id: int) -> list[dict]:

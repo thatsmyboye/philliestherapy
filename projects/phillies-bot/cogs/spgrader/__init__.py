@@ -16,7 +16,8 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from .monitor import GameMonitor
-from .formatter import build_leaderboard_embed
+from datetime import date as _date
+from .formatter import build_leaderboard_embed, build_league_embed
 
 
 class SPGraderCog(commands.Cog, name="SPGrader"):
@@ -60,20 +61,44 @@ class SPGraderCog(commands.Cog, name="SPGrader"):
         description="View the Phillies Therapy PAR leaderboard"
     )
     @app_commands.describe(
-        view="Choose between season averages or top individual performances"
+        view="Choose a leaderboard view",
+        date="Date for MLB league view (YYYY-MM-DD). Defaults to today. Only used with 'League Leaders'.",
     )
     @app_commands.choices(view=[
         app_commands.Choice(name="Season Averages", value="averages"),
         app_commands.Choice(name="Top Performances", value="individual"),
         app_commands.Choice(name="Recent Games", value="cal"),
+        app_commands.Choice(name="League Leaders", value="league"),
     ])
     async def leaderboard(
         self,
         interaction: discord.Interaction,
         view: str = "averages",
+        date: str = None,
     ) -> None:
-        embed = build_leaderboard_embed(self.monitor.leaderboard, page=view)
-        await interaction.response.send_message(embed=embed)
+        if view == "league":
+            await interaction.response.defer()
+            season = _date.today().year
+            if date:
+                # Validate date format
+                try:
+                    from datetime import datetime as _dt
+                    _dt.strptime(date, "%Y-%m-%d")
+                except ValueError:
+                    await interaction.followup.send(
+                        "❌ Invalid date format. Use YYYY-MM-DD (e.g. `2026-04-15`).",
+                        ephemeral=True,
+                    )
+                    return
+                starters = await self.monitor.api.get_league_starters_by_date(date)
+                embed = build_league_embed(starters, date_label=date, is_season=False)
+            else:
+                leaders = await self.monitor.api.get_league_season_pitching_leaders(season)
+                embed = build_league_embed(leaders, date_label=str(season), is_season=True)
+            await interaction.followup.send(embed=embed)
+        else:
+            embed = build_leaderboard_embed(self.monitor.leaderboard, page=view)
+            await interaction.response.send_message(embed=embed)
 
     @app_commands.command(
         name="par",
@@ -85,7 +110,7 @@ class SPGraderCog(commands.Cog, name="SPGrader"):
 
         lb = self.monitor.leaderboard
         records = [
-            r for r in lb._records
+            r for r in lb._regular_season_records
             if pitcher.lower() in r.pitcher_name.lower()
         ]
 
@@ -193,7 +218,7 @@ class SPGraderCog(commands.Cog, name="SPGrader"):
     ) -> list[app_commands.Choice[str]]:
         """Return pitchers with 1+ recorded starts, sorted A-Z by last name."""
         seen: dict[int, str] = {}
-        for r in self.monitor.leaderboard._records:
+        for r in self.monitor.leaderboard._regular_season_records:
             seen[r.pitcher_id] = r.pitcher_name
 
         def _last_name(name: str) -> str:

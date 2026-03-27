@@ -25,6 +25,7 @@ class GameRecord:
     bb: int
     er: int
     h: int
+    is_spring_training: bool = False
 
 
 class Leaderboard:
@@ -39,7 +40,10 @@ class Leaderboard:
             try:
                 with open(self.filepath, "r") as f:
                     raw = json.load(f)
-                self._records = [GameRecord(**r) for r in raw]
+                self._records = [
+                    GameRecord(**{**r, "is_spring_training": r.get("is_spring_training", False)})
+                    for r in raw
+                ]
                 log.info(f"Leaderboard loaded: {len(self._records)} records")
             except Exception as e:
                 log.error(f"Failed to load leaderboard: {e}")
@@ -76,6 +80,7 @@ class Leaderboard:
             bb=data.walks,
             er=data.earned_runs,
             h=data.hits,
+            is_spring_training=data.is_spring_training,
         )
         self._records.append(rec)
         self._save()
@@ -102,6 +107,7 @@ class Leaderboard:
             bb=data.walks,
             er=data.earned_runs,
             h=data.hits,
+            is_spring_training=data.is_spring_training,
         )
 
         for i, r in enumerate(self._records):
@@ -130,20 +136,25 @@ class Leaderboard:
 
     # ─── Queries ─────────────────────────────────────────────────────────────
 
+    @property
+    def _regular_season_records(self) -> list:
+        """Records for regular season games only (excludes spring training)."""
+        return [r for r in self._records if not r.is_spring_training]
+
     def get_pitcher_average(self, pitcher_id: int) -> Optional[float]:
-        games = [r.score for r in self._records if r.pitcher_id == pitcher_id]
+        games = [r.score for r in self._regular_season_records if r.pitcher_id == pitcher_id]
         if not games:
             return None
         return round(sum(games) / len(games), 1)
 
     def get_pitcher_games(self, pitcher_id: int) -> int:
-        return len([r for r in self._records if r.pitcher_id == pitcher_id])
+        return len([r for r in self._regular_season_records if r.pitcher_id == pitcher_id])
 
     def top_averages(self, n: int = 5, min_games: int = 1) -> list[dict]:
         """Top N pitchers by average PAR score."""
         by_pitcher: dict[int, list[float]] = {}
         names: dict[int, str] = {}
-        for r in self._records:
+        for r in self._regular_season_records:
             by_pitcher.setdefault(r.pitcher_id, []).append(r.score)
             names[r.pitcher_id] = r.pitcher_name
 
@@ -163,8 +174,8 @@ class Leaderboard:
         return results[:n]
 
     def top_individual(self, n: int = 5) -> list[GameRecord]:
-        """Top N individual game performances."""
-        sorted_records = sorted(self._records, key=lambda r: r.score, reverse=True)
+        """Top N individual game performances (regular season only)."""
+        sorted_records = sorted(self._regular_season_records, key=lambda r: r.score, reverse=True)
         return sorted_records[:n]
 
     def pitcher_rank(self, pitcher_id: int) -> Optional[int]:
