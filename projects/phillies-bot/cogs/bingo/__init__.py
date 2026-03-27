@@ -104,11 +104,18 @@ class BingoCog(commands.Cog, name="Bingo"):
         """
         Return (store, scores, announce_channel_id, variant) for the given channel,
         or None if the channel isn't configured for bingo.
+
+        If neither BINGO_CHANNEL_ID nor OTHER_BINGO_CHANNEL_ID is set, bingo is
+        allowed from any channel (Phillies mode), with announcements posted back
+        to the command's own channel.
         """
         if self._channel_id and channel_id == self._channel_id:
             return (self._store, self._scores, self._channel_id, "phillies")
         if self._other_channel_id and channel_id == self._other_channel_id:
             return (self._league_store, self._league_scores, self._other_channel_id, "league")
+        # Neither channel configured — allow from any channel (Phillies mode default).
+        if not self._channel_id and not self._other_channel_id:
+            return (self._store, self._scores, channel_id, "phillies")
         return None
 
     # ── Slash command group ───────────────────────────────────────────────────
