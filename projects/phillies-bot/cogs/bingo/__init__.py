@@ -180,10 +180,12 @@ class BingoCog(commands.Cog, name="Bingo"):
         # Check immediately in case events have already fired (late joiner)
         marked = store.get_marked_set()
         if marked:
-            await self._check_player_win(uid, interaction.guild, store, scores, announce_ch)
+            variant_lbl = "League" if variant == "league" else "Phillies"
+            await self._check_player_win(uid, interaction.guild, store, scores, announce_ch, variant_lbl)
 
         scores.ensure_current_season(date.today().year)
-        embed = make_join_confirm_embed(store.win_type, pool, today)
+        variant_label = "League" if variant == "league" else "Phillies"
+        embed = make_join_confirm_embed(store.win_type, pool, today, variant_label)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     # /bingo check ────────────────────────────────────────────────────────────
@@ -253,12 +255,13 @@ class BingoCog(commands.Cog, name="Bingo"):
             )
             return
 
-        _store, scores, _ch, _variant = game_ctx
+        _store, scores, _ch, variant = game_ctx
         year = date.today().year
         scores.ensure_current_season(year)
 
         entries = scores.get_top_n(5)
-        embed = make_leaderboard_embed(entries, interaction.guild, year)
+        variant_label = "League" if variant == "league" else "Phillies"
+        embed = make_leaderboard_embed(entries, interaction.guild, year, variant_label)
         await interaction.followup.send(embed=embed)
 
     # ── Background monitor: Phillies ──────────────────────────────────────────
@@ -463,7 +466,7 @@ class BingoCog(commands.Cog, name="Bingo"):
         if new_fingerprints:
             for uid in list(self._store.players.keys()):
                 if not self._store.is_winner(uid):
-                    await self._check_player_win(uid, None, self._store, self._scores, self._channel_id)
+                    await self._check_player_win(uid, None, self._store, self._scores, self._channel_id, "Phillies")
 
     # ── Internal: process a live League game feed ─────────────────────────────
 
@@ -507,7 +510,7 @@ class BingoCog(commands.Cog, name="Bingo"):
                 if not self._league_store.is_winner(uid):
                     await self._check_player_win(
                         uid, None,
-                        self._league_store, self._league_scores, self._other_channel_id,
+                        self._league_store, self._league_scores, self._other_channel_id, "League",
                     )
 
     # ── Internal: check if a player has won ──────────────────────────────────
@@ -519,6 +522,7 @@ class BingoCog(commands.Cog, name="Bingo"):
         store: BingoStore,
         scores: ScoresStore,
         announce_channel_id: int,
+        variant_label: str = "Phillies",
     ) -> None:
         player = store.get_player(user_id)
         if player is None or player.get("bingo"):
@@ -563,6 +567,7 @@ class BingoCog(commands.Cog, name="Bingo"):
                 points=points,
                 win_type=store.win_type,
                 game_date=today,
+                variant_label=variant_label,
             )
             try:
                 await channel.send(embed=embed)

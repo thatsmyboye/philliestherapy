@@ -1,9 +1,12 @@
 """
-Embed builders for the Phillies Bingo game.
+Embed builders for the Bingo game.
 
   make_join_confirm_embed  — ephemeral board preview shown on /bingo join
   make_win_announcement_embed — public post to bingo channel on a win
   make_leaderboard_embed   — public top-5 season scores
+
+All functions accept an optional `variant_label` (e.g. "Phillies", "League")
+that is used in embed titles and footers to distinguish game variants.
 """
 from __future__ import annotations
 
@@ -30,6 +33,7 @@ def make_join_confirm_embed(
     win_type: str,
     event_pool: list[dict],
     game_date: str,
+    variant_label: str = "Phillies",
 ) -> discord.Embed:
     """
     Ephemeral embed sent back to a player after /bingo join.
@@ -38,7 +42,7 @@ def make_join_confirm_embed(
     win_label = WIN_TYPE_LABELS.get(win_type, win_type)
 
     embed = discord.Embed(
-        title="🎱 You're in — Phillies Bingo!",
+        title=f"🎱 You're in — {variant_label} Bingo!",
         description=(
             f"Your personal 5×5 board has been generated for **{game_date}**.\n"
             "Squares will be marked automatically as events occur in today's game.\n\n"
@@ -51,7 +55,7 @@ def make_join_confirm_embed(
     # Summarise today's event types
     event_lines: list[str] = []
     for sq in event_pool:
-        player_part = sq["player_name"] if sq["player_name"] != "Any" else "Any Phillies player"
+        player_part = sq["player_name"] if sq["player_name"] != "Any" else "Any player"
         base = EVENT_BASE_LABEL.get(sq["event_id"], sq["event_id"])
         event_lines.append(f"• **{player_part}** — {base}")
 
@@ -77,6 +81,7 @@ def make_win_announcement_embed(
     points: int,
     win_type: str,
     game_date: str,
+    variant_label: str = "Phillies",
 ) -> discord.Embed:
     """
     Public embed posted to the bingo channel when a player achieves bingo.
@@ -93,7 +98,7 @@ def make_win_announcement_embed(
         ),
         colour=discord.Colour.gold() if place == 1 else discord.Colour.green(),
     )
-    embed.set_footer(text=f"Phillies Bingo · {game_date}")
+    embed.set_footer(text=f"{variant_label} Bingo · {game_date}")
     return embed
 
 
@@ -105,6 +110,7 @@ def make_leaderboard_embed(
     entries: list[dict],
     guild: Optional[discord.Guild],
     season: int,
+    variant_label: str = "Phillies",
 ) -> discord.Embed:
     """
     Public embed showing top 5 season bingo scores.
@@ -113,7 +119,7 @@ def make_leaderboard_embed(
     guild:   used to resolve current server nicknames; may be None
     """
     embed = discord.Embed(
-        title=f"🏆 Phillies Bingo — {season} Season Leaderboard",
+        title=f"🏆 {variant_label} Bingo — {season} Season Leaderboard",
         colour=discord.Colour.red(),
     )
 
