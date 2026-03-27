@@ -38,6 +38,21 @@ EVENT_POOL_IDS: list[str] = [
     "CATCHER_INT", "LEAD_CHANGE", "EXTRA_INN", "PHI_COMEBACK",
 ]
 
+# League pool — identical to EVENT_POOL_IDS but COMEBACK replaces PHI_COMEBACK
+LEAGUE_EVENT_POOL_IDS: list[str] = [
+    # BATTER events (14)
+    "HR", "DOUBLE", "TRIPLE",
+    "STOLEN_BASE", "CAUGHT_STEAL",
+    "HBP", "WALK", "INTENT_WALK",
+    "K_SWING", "K_LOOK",
+    "SAC_BUNT", "SAC_FLY", "FIELDERS_CH", "GRAND_SLAM",
+    # PITCHER events (4)
+    "PITCHER_K", "BALK", "WILD_PITCH", "PICKOFF",
+    # GAME events (8) — always "Any", no specific player
+    "PASSED_BALL", "ERROR", "DOUBLE_PLAY", "TRIPLE_PLAY",
+    "CATCHER_INT", "LEAD_CHANGE", "EXTRA_INN", "COMEBACK",
+]
+
 # Event category map
 EVENT_CATEGORY: dict[str, str] = {
     "HR": BATTER, "DOUBLE": BATTER, "TRIPLE": BATTER,
@@ -51,6 +66,7 @@ EVENT_CATEGORY: dict[str, str] = {
     "PASSED_BALL": GAME, "ERROR": GAME, "DOUBLE_PLAY": GAME,
     "TRIPLE_PLAY": GAME, "CATCHER_INT": GAME,
     "LEAD_CHANGE": GAME, "EXTRA_INN": GAME, "PHI_COMEBACK": GAME,
+    "COMEBACK": GAME,
 }
 
 # Base short labels (appended after player name abbreviation)
@@ -67,6 +83,7 @@ EVENT_BASE_LABEL: dict[str, str] = {
     "DOUBLE_PLAY": "DP", "TRIPLE_PLAY": "3Play",
     "CATCHER_INT": "CI", "LEAD_CHANGE": "LdChng",
     "EXTRA_INN": "Extras", "PHI_COMEBACK": "ComeBk",
+    "COMEBACK": "ComeBk",
 }
 
 WIN_TYPES: list[str] = [
@@ -117,6 +134,16 @@ def draw_daily_pool(game_date: str) -> list[str]:
     """
     rng = random.Random(game_date)
     return rng.sample(EVENT_POOL_IDS, 24)
+
+
+def draw_daily_pool_league(game_date: str) -> list[str]:
+    """
+    Randomly draw 24 event IDs from LEAGUE_EVENT_POOL_IDS for the given game date.
+    Deterministic: same date always yields the same draw.
+    Uses a different seed suffix to ensure independence from the Phillies pool draw.
+    """
+    rng = random.Random(game_date + ":league")
+    return rng.sample(LEAGUE_EVENT_POOL_IDS, 24)
 
 
 def pick_win_type(game_date: str) -> str:
@@ -175,6 +202,23 @@ def assign_players_to_pool(
         })
 
     return squares
+
+
+def assign_any_pool(event_ids: list[str]) -> list[dict]:
+    """
+    Build a list of 24 square dicts where every square uses player_id=None ("Any").
+    Used for the league bingo variant where no specific team's roster is tracked.
+    """
+    return [
+        {
+            "event_id": event_id,
+            "player_id": None,
+            "player_name": "Any",
+            "label": make_label(event_id, "Any"),
+            "category": EVENT_CATEGORY[event_id],
+        }
+        for event_id in event_ids
+    ]
 
 
 def make_fingerprint(square: dict) -> str:
@@ -283,6 +327,25 @@ def _matches_game_event(event_id: str, event_type: str, pitching_team: Optional[
     return False
 
 
+def _matches_game_event_any(event_id: str, event_type: str) -> bool:
+    """
+    Like _matches_game_event but without any team-ID filter.
+    Used for the league bingo variant.
+    LEAD_CHANGE, EXTRA_INN, COMEBACK are still handled via linescore.
+    """
+    if event_id == "PASSED_BALL":
+        return event_type == "passed_ball"
+    if event_id == "ERROR":
+        return event_type == "field_error"
+    if event_id == "DOUBLE_PLAY":
+        return event_type in _DP_TYPES
+    if event_id == "TRIPLE_PLAY":
+        return event_type == "triple_play"
+    if event_id == "CATCHER_INT":
+        return event_type == "catcher_interf"
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Main detection function
 # ---------------------------------------------------------------------------
@@ -338,6 +401,59 @@ def detect_events(
 
         elif cat == GAME:
             matched = _matches_game_event(eid, event_type, pitching_team)
+
+        if matched:
+            triggered.append(fingerprint)
+
+    return triggered
+
+
+def detect_events_league(
+    play: dict,
+    pool_squares: list[dict],
+    already_marked: set[str],
+) -> list[str]:
+    """
+    Like detect_events() but fires for any team in any game (no Phillies filter).
+    Used by the league bingo monitor.
+
+    Does NOT handle linescore-level events (LEAD_CHANGE, EXTRA_INN, COMEBACK).
+    """
+    if not play.get("about", {}).get("isComplete", False):
+        return []
+
+    result = play.get("result", {})
+    matchup = play.get("matchup", {})
+
+    event_type: str = result.get("eventType", "")
+    desc: str = result.get("description", "").lower()
+    rbi: int = result.get("rbi", 0)
+    batter_id: Optional[int] = matchup.get("batter", {}).get("id")
+    pitcher_id: Optional[int] = matchup.get("pitcher", {}).get("id")
+
+    triggered: list[str] = []
+
+    for square in pool_squares:
+        fingerprint = make_fingerprint(square)
+        if fingerprint in already_marked:
+            continue
+
+        cat = square["category"]
+        pid = square["player_id"]  # always None for league (all "Any")
+        eid = square["event_id"]
+
+        matched = False
+
+        if cat == BATTER:
+            if pid is None or batter_id == pid:
+                matched = _matches_batter_event(eid, event_type, desc, rbi)
+
+        elif cat == PITCHER:
+            if pid is None or pitcher_id == pid:
+                matched = _matches_pitcher_event(eid, event_type, desc)
+
+        elif cat == GAME:
+            matched = _matches_game_event_any(eid, event_type)
 
         if matched:
             triggered.append(fingerprint)
@@ -409,6 +525,67 @@ def detect_linescore_events(
                     triggered.append(fp_cb)
 
     return triggered, {"phi_score": phi_score, "opp_score": opp_score, "inning": current_inning}
+
+
+def detect_linescore_events_league(
+    feed: dict,
+    prev_snapshot: Optional[dict],
+    already_marked: set[str],
+    pool_squares: list[dict],
+) -> tuple[list[str], dict]:
+    """
+    Like detect_linescore_events() but for any game (no Phillies perspective).
+    Checks for LEAD_CHANGE, EXTRA_INN, and COMEBACK (generic comeback).
+
+    prev_snapshot: {"home_score": int, "away_score": int, "inning": int} or None
+    Returns (fingerprints, new_snapshot).
+    """
+    linescore = feed.get("liveData", {}).get("linescore", {})
+
+    runs = linescore.get("teams", {})
+    home_score = runs.get("home", {}).get("runs", 0) or 0
+    away_score = runs.get("away", {}).get("runs", 0) or 0
+    current_inning = linescore.get("currentInning", 0) or 0
+
+    triggered: list[str] = []
+    square_map = {
+        s["event_id"]: make_fingerprint(s)
+        for s in pool_squares
+        if s["event_id"] in ("LEAD_CHANGE", "EXTRA_INN", "COMEBACK")
+    }
+
+    # EXTRA_INN: game enters 10th or beyond
+    fp_extra = square_map.get("EXTRA_INN")
+    if fp_extra and fp_extra not in already_marked and current_inning > 9:
+        triggered.append(fp_extra)
+
+    if prev_snapshot is not None:
+        prev_home = prev_snapshot.get("home_score", 0)
+        prev_away = prev_snapshot.get("away_score", 0)
+
+        def _leader(home: int, away: int) -> Optional[str]:
+            if home > away:
+                return "home"
+            if away > home:
+                return "away"
+            return None  # tie
+
+        prev_leader = _leader(prev_home, prev_away)
+        curr_leader = _leader(home_score, away_score)
+
+        if prev_leader != curr_leader and curr_leader is not None:
+            # LEAD_CHANGE: any team takes or retakes the lead
+            fp_lc = square_map.get("LEAD_CHANGE")
+            if fp_lc and fp_lc not in already_marked:
+                triggered.append(fp_lc)
+
+            # COMEBACK: a team that was trailing (prev_leader not None) takes the lead
+            if prev_leader is not None:
+                fp_cb = square_map.get("COMEBACK")
+                if fp_cb and fp_cb not in already_marked:
+                    triggered.append(fp_cb)
+
+    return triggered, {"home_score": home_score, "away_score": away_score, "inning": current_inning}
 
 
 # ---------------------------------------------------------------------------

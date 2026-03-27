@@ -554,6 +554,23 @@ def get_todays_phillies_games() -> list[dict]:
         return []
 
 
+def get_todays_non_phillies_games() -> list[dict]:
+    """
+    Return today's MLB games that do NOT involve the Phillies (team 143).
+    Fetches the full schedule and filters out any game where either team is PHI.
+    """
+    try:
+        today = date.today().strftime("%Y-%m-%d")
+        all_games = statsapi.schedule(date=today, sportId=1)
+        return [
+            g for g in all_games
+            if g.get("away_id") != PHILLIES_TEAM_ID
+            and g.get("home_id") != PHILLIES_TEAM_ID
+        ]
+    except Exception:
+        return []
+
+
 def get_next_game_with_probables(days_ahead: int = 10) -> Optional[dict]:
     """
     Find the next upcoming Phillies game (within days_ahead days) that has at

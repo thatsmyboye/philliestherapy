@@ -42,17 +42,18 @@ _SCORES_DEFAULT: dict = {
 # ---------------------------------------------------------------------------
 
 class BingoStore:
-    """Thin wrapper around data/bingo.json with atomic saves."""
+    """Thin wrapper around a bingo game-day JSON file with atomic saves."""
 
-    def __init__(self) -> None:
+    def __init__(self, path: Path = BINGO_PATH) -> None:
+        self._path = path
         self._data = self._load()
 
     # ── I/O ──────────────────────────────────────────────────────────────────
 
     def _load(self) -> dict:
-        if BINGO_PATH.exists():
+        if self._path.exists():
             try:
-                with open(BINGO_PATH) as f:
+                with open(self._path) as f:
                     data = json.load(f)
                 for k, v in _BINGO_DEFAULT.items():
                     data.setdefault(k, copy.deepcopy(v))
@@ -62,11 +63,11 @@ class BingoStore:
         return copy.deepcopy(_BINGO_DEFAULT)
 
     def save(self) -> None:
-        BINGO_PATH.parent.mkdir(parents=True, exist_ok=True)
-        tmp = str(BINGO_PATH) + ".tmp"
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = str(self._path) + ".tmp"
         with open(tmp, "w") as f:
             json.dump(self._data, f, indent=2)
-        os.replace(tmp, str(BINGO_PATH))
+        os.replace(tmp, str(self._path))
 
     # ── Game-day management ───────────────────────────────────────────────────
 
@@ -209,17 +210,18 @@ class BingoStore:
 # ---------------------------------------------------------------------------
 
 class ScoresStore:
-    """Thin wrapper around data/bingo_scores.json with atomic saves."""
+    """Thin wrapper around a bingo season-scores JSON file with atomic saves."""
 
-    def __init__(self) -> None:
+    def __init__(self, path: Path = SCORES_PATH) -> None:
+        self._path = path
         self._data = self._load()
 
     # ── I/O ──────────────────────────────────────────────────────────────────
 
     def _load(self) -> dict:
-        if SCORES_PATH.exists():
+        if self._path.exists():
             try:
-                with open(SCORES_PATH) as f:
+                with open(self._path) as f:
                     data = json.load(f)
                 for k, v in _SCORES_DEFAULT.items():
                     data.setdefault(k, copy.deepcopy(v))
@@ -229,11 +231,11 @@ class ScoresStore:
         return copy.deepcopy(_SCORES_DEFAULT)
 
     def save(self) -> None:
-        SCORES_PATH.parent.mkdir(parents=True, exist_ok=True)
-        tmp = str(SCORES_PATH) + ".tmp"
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = str(self._path) + ".tmp"
         with open(tmp, "w") as f:
             json.dump(self._data, f, indent=2)
-        os.replace(tmp, str(SCORES_PATH))
+        os.replace(tmp, str(self._path))
 
     # ── Season management ────────────────────────────────────────────────────
 
