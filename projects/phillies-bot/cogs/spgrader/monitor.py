@@ -30,6 +30,7 @@ class TrackedGame:
         self.sp_exited: bool = False        # starter has been replaced
         self.inning_complete: bool = False  # inning after exit has finished
         self.reported: bool = False         # embed already posted
+        self.final_grade_done: bool = False # re-grade from Final state complete
         self.inning_at_exit: Optional[int] = None
         self.half_at_exit: Optional[str] = None   # "top" | "bottom"
         self.phillies_side: Optional[str] = None  # "home" | "away"
@@ -65,7 +66,12 @@ class GameMonitor:
 
             tg = self.tracked[game_pk]
             if tg.reported:
-                continue
+                # Once a game is Final we do one additional re-grade so that
+                # any stats captured prematurely during a live exit-detection
+                # (e.g. false positive) get corrected with the definitive box
+                # score.  Skip only when the Final re-grade has already run.
+                if status != "Final" or tg.final_grade_done:
+                    continue
 
             result = await self._process_game(tg, game, status)
             if result:
@@ -144,10 +150,13 @@ class GameMonitor:
 
         result = grade_pitcher(pitcher_data)
 
-        # Save to leaderboard
-        self.leaderboard.record(result)
+        # Save to leaderboard — update any existing record so a premature
+        # live-detection grade is replaced by the final accurate stats.
+        self.leaderboard.record_or_update(result)
 
         tg.reported = True
+        if status == "Final":
+            tg.final_grade_done = True
         embed = build_embed(result, self.leaderboard)
         return embed, None
 
@@ -168,29 +177,46 @@ class GameMonitor:
         return starter_id, name
 
     def _get_current_pitcher(self, feed: dict, side: str) -> Optional[int]:
-        """Return the ID of the current pitcher on the mound for the given side."""
+        """Return the ID of the current pitcher on the mound for the given side.
+
+        Only returns a pitcher ID once they have thrown at least one pitch in
+        the boxscore.  This guards against the MLB Stats API pre-populating
+        ``linescore.defense.pitcher`` with the *upcoming* reliever before the
+        half-inning has started (a common source of false SP-exit detection).
+        """
         linescore = feed.get("liveData", {}).get("linescore", {})
-        defense_side = "home" if side == "away" else "away"
-        # The current pitcher pitches from the opposite dugout
-        current = linescore.get("defense" if side == "away" else "offense", {})
-        # Actually use the correct field: pitcher is in defense for the *other* team
         defense = linescore.get("defense", {})
-        offense = linescore.get("offense", {})
+        current_inning_half = linescore.get("inningHalf", "")
 
-        # Phillies pitching: they're pitching when opponent is batting
-        # If Phillies = "home", they pitch in top innings (away bats)
-        current_inning_half = feed.get("liveData", {}).get("linescore", {}).get("inningHalf", "")
-
+        # Determine whether the Phillies are currently the fielding team.
         if side == "home" and current_inning_half.lower() == "top":
-            return defense.get("pitcher", {}).get("id")
+            pitcher_id = defense.get("pitcher", {}).get("id")
         elif side == "away" and current_inning_half.lower() == "bottom":
-            return defense.get("pitcher", {}).get("id")
+            pitcher_id = defense.get("pitcher", {}).get("id")
         else:
-            # Between innings — can't reliably determine current pitcher from the
-            # boxscore pitchers list because a reliever can appear there before
-            # throwing a single pitch. Return None to defer detection to the next
-            # polling cycle when inningHalf is active again.
+            # Either Phillies are batting or the half-inning state is unknown
+            # (e.g. between-innings).  Defer to the next poll.
             return None
+
+        if not pitcher_id:
+            return None
+
+        # Guard: the MLB API sometimes pre-populates defense.pitcher with the
+        # next reliever before they have thrown a single pitch.  Only confirm
+        # the exit once the candidate pitcher has ≥1 pitch in the boxscore.
+        boxscore = feed.get("liveData", {}).get("boxscore", {})
+        for team_side in ("home", "away"):
+            players = boxscore.get("teams", {}).get(team_side, {}).get("players", {})
+            key = f"ID{pitcher_id}"
+            if key in players:
+                stats = players[key].get("stats", {}).get("pitching", {})
+                if stats.get("pitchesThrown", 0) < 1:
+                    # Pitcher listed but hasn't thrown yet — defer detection.
+                    return None
+                return pitcher_id
+
+        # Pitcher not found in boxscore yet (pre-game or API lag) — defer.
+        return None
 
     def _is_inning_complete(
         self,
