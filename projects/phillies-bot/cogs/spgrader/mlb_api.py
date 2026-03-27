@@ -6,12 +6,57 @@ All endpoints are public — no auth required.
 import asyncio
 import aiohttp
 import logging
+import math
 from datetime import date
 from typing import Optional
 
 log = logging.getLogger("mlb_api")
 
 BASE = "https://statsapi.mlb.com/api/v1"
+
+
+def _estimate_season_par(ip_str: str, era_str: str, k: int, bb: int, gs: int) -> float:
+    """
+    Estimate a season PAR from aggregate pitching stats.
+    Uses per-start averages for: efficiency, run prevention, strikeouts, walk control.
+    Re-weighted proportionally since CSW%, strike%, and BBQ aren't available.
+    """
+    if gs == 0:
+        return 0.0
+    try:
+        parts = str(ip_str).split(".")
+        total_outs = int(parts[0]) * 3 + (int(parts[1]) if len(parts) > 1 else 0)
+    except (ValueError, IndexError):
+        return 0.0
+    avg_outs = total_outs / gs
+    avg_ip = avg_outs / 3
+    try:
+        era = float(era_str)
+    except (ValueError, TypeError):
+        era = 4.50
+    avg_k = k / gs
+    avg_bb = bb / gs
+
+    # Efficiency (weight 22) — mirrors score_efficiency logic
+    linear = (avg_outs / 27) * 85
+    bonus = min(15.0, (avg_outs / 27) ** 1.6 * 15)
+    eff = max(0.0, min(100.0, linear + bonus))
+
+    # Run prevention (weight 24) — season ERA is already per-9
+    rp = max(0.0, min(100.0, 100 * math.exp(-0.22 * era)))
+
+    # Strikeouts (weight 14) — mirrors score_strikeouts logic
+    k9 = (avg_k / avg_ip) * 9 if avg_ip > 0 else 0.0
+    k_sc = max(0.0, min(100.0, (k9 / 15) * 100))
+    k_sc = max(0.0, min(100.0, k_sc ** 0.85 * (100 ** 0.15)))
+
+    # Walk control (weight 14) — mirrors score_walk_control logic
+    bb9 = (avg_bb / avg_ip) * 9 if avg_ip > 0 else 0.0
+    bb_sc = max(0.0, min(100.0, 100 * math.exp(-0.28 * bb9)))
+
+    # Re-weight to 100 since three components (CSW 8%, SBR 10%, BBQ 8%) are unavailable
+    par = (eff * 22 + rp * 24 + k_sc * 14 + bb_sc * 14) / 74
+    return round(par, 1)
 STATCAST_BASE = "https://baseballsavant.mlb.com"
 
 
@@ -210,7 +255,7 @@ class MLBClient:
     async def get_league_season_pitching_leaders(self, season: int, limit: int = 15) -> list[dict]:
         """
         Return the top starting pitcher season lines ranked by innings pitched.
-        Each entry: name, team, ip, era, k, bb, w, l, games
+        Each entry: name, team, ip, par, gs
         """
         data = await self.get(
             f"{BASE}/stats",
@@ -223,11 +268,6 @@ class MLBClient:
                 "playerPool": "all",
                 "limit": limit,
                 "sortStat": "inningsPitched",
-                "fields": (
-                    "stats,splits,stat,player,team,"
-                    "inningsPitched,era,strikeOuts,baseOnBalls,"
-                    "wins,losses,gamesStarted"
-                ),
             }
         )
         leaders = []
@@ -238,15 +278,15 @@ class MLBClient:
             gs = stat.get("gamesStarted", 0)
             if gs < 1:
                 continue
+            ip_str = stat.get("inningsPitched", "0.0")
+            era_str = stat.get("era", "-.--")
+            k = stat.get("strikeOuts", 0)
+            bb = stat.get("baseOnBalls", 0)
             leaders.append({
                 "name": player.get("fullName", "Unknown"),
                 "team": team.get("abbreviation", "???"),
-                "ip": stat.get("inningsPitched", "0.0"),
-                "era": stat.get("era", "-.--"),
-                "k": stat.get("strikeOuts", 0),
-                "bb": stat.get("baseOnBalls", 0),
-                "w": stat.get("wins", 0),
-                "l": stat.get("losses", 0),
+                "ip": ip_str,
+                "par": _estimate_season_par(ip_str, era_str, k, bb, gs),
                 "gs": gs,
             })
         return leaders

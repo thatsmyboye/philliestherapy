@@ -241,19 +241,17 @@ def build_league_embed(
         return embed
 
     if is_season:
-        # Season view: Name, Team, IP, ERA, K, BB, W-L
+        # Season view: Name, Team, IP, PAR, GS
         NAME_W = 20
         TEAM_W = 4
-        header = f"{'#':>3}  {'Name':<{NAME_W}}  {'Tm':<{TEAM_W}}  {'IP':>5}  {'ERA':>5}  {'K':>4}  {'BB':>3}  {'W-L':>5}  {'GS':>3}"
+        header = f"{'#':>3}  {'Name':<{NAME_W}}  {'Tm':<{TEAM_W}}  {'IP':>5}  {'PAR':>5}  {'GS':>3}"
         sep = "─" * len(header)
         rows = [header, sep]
         for i, s in enumerate(starters[:15]):
             name = s["name"][:NAME_W]
-            wl = f"{s['w']}-{s['l']}"
             rows.append(
                 f"{i+1:>3}  {name:<{NAME_W}}  {s['team']:<{TEAM_W}}  "
-                f"{s['ip']:>5}  {s['era']:>5}  {s['k']:>4}  {s['bb']:>3}  "
-                f"{wl:>5}  {s['gs']:>3}"
+                f"{s['ip']:>5}  {s['par']:>5.1f}  {s['gs']:>3}"
             )
     else:
         # Daily view: Name, Team, IP, K, BB, ER, H, W/L
