@@ -243,18 +243,13 @@ class MLBClient:
                         "result": result_str,
                     })
 
-        # Sort: most IP first, then most Ks
-        def _sort_key(s):
-            parts = str(s["ip"]).split(".")
-            outs = int(parts[0]) * 3 + (int(parts[1]) if len(parts) > 1 else 0)
-            return (outs, s["k"])
-
-        starters.sort(key=_sort_key, reverse=True)
+        # Sort: highest PAR first
+        starters.sort(key=lambda s: s["par"], reverse=True)
         return starters
 
     async def get_league_season_pitching_leaders(self, season: int, limit: int = 15) -> list[dict]:
         """
-        Return the top starting pitcher season lines ranked by innings pitched.
+        Return the top starting pitcher season lines ranked by PAR.
         Each entry: name, team, ip, par, gs
         """
         data = await self.get(
@@ -266,7 +261,7 @@ class MLBClient:
                 "season": season,
                 "sportId": 1,
                 "playerPool": "all",
-                "limit": limit,
+                "limit": 50,
                 "sortStat": "inningsPitched",
             }
         )
@@ -289,7 +284,8 @@ class MLBClient:
                 "par": _estimate_season_par(ip_str, era_str, k, bb, gs),
                 "gs": gs,
             })
-        return leaders
+        leaders.sort(key=lambda s: s["par"], reverse=True)
+        return leaders[:limit]
 
     # ─── Play-by-play (for CSW%) ─────────────────────────────────────────────
 
