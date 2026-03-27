@@ -69,21 +69,22 @@ EVENT_CATEGORY: dict[str, str] = {
     "COMEBACK": GAME,
 }
 
-# Base short labels (appended after player name abbreviation)
+# Base short labels (appended after player name abbreviation).
+# All codes are ≤ 2 chars so "Any XX" fits within the 6-char column width.
 EVENT_BASE_LABEL: dict[str, str] = {
-    "HR": "HR", "DOUBLE": "2B", "TRIPLE": "3B",
-    "STOLEN_BASE": "SB", "CAUGHT_STEAL": "CS",
-    "HBP": "HBP", "WALK": "BB", "INTENT_WALK": "IBB",
-    "K_SWING": "K-Sw", "K_LOOK": "K-Lo",
-    "SAC_BUNT": "SacBnt", "SAC_FLY": "SacFly",
-    "FIELDERS_CH": "FC", "GRAND_SLAM": "GrSlam",
-    "PITCHER_K": "K", "BALK": "Balk",
-    "WILD_PITCH": "WP", "PICKOFF": "Pkoff",
-    "PASSED_BALL": "PB", "ERROR": "Error",
-    "DOUBLE_PLAY": "DP", "TRIPLE_PLAY": "3Play",
-    "CATCHER_INT": "CI", "LEAD_CHANGE": "LdChng",
-    "EXTRA_INN": "Extras", "PHI_COMEBACK": "ComeBk",
-    "COMEBACK": "ComeBk",
+    "HR": "HR",           "DOUBLE": "2B",       "TRIPLE": "3B",
+    "STOLEN_BASE": "SB",  "CAUGHT_STEAL": "CS",
+    "HBP": "HP",          "WALK": "BB",          "INTENT_WALK": "IB",
+    "K_SWING": "KS",      "K_LOOK": "KL",
+    "SAC_BUNT": "Bn",     "SAC_FLY": "SF",
+    "FIELDERS_CH": "FC",  "GRAND_SLAM": "GS",
+    "PITCHER_K": "K",     "BALK": "BK",
+    "WILD_PITCH": "WP",   "PICKOFF": "PO",
+    "PASSED_BALL": "PB",  "ERROR": "E",
+    "DOUBLE_PLAY": "DP",  "TRIPLE_PLAY": "TP",
+    "CATCHER_INT": "CI",  "LEAD_CHANGE": "LC",
+    "EXTRA_INN": "XI",    "PHI_COMEBACK": "CB",
+    "COMEBACK": "CB",
 }
 
 WIN_TYPES: list[str] = [
@@ -110,17 +111,17 @@ WIN_TYPE_LABELS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 def abbrev_name(last_name: str) -> str:
-    """Return up to 4 chars of a last name for board display."""
-    return last_name[:4] if len(last_name) > 4 else last_name
+    """Return up to 3 chars of a last name for board display."""
+    return last_name[:3] if len(last_name) > 3 else last_name
 
 
 def make_label(event_id: str, player_name: str) -> str:
-    """Build the board cell label, e.g. 'Schw HR' or 'Any BB'."""
+    """Build the board cell label, e.g. 'Sch HR' or 'Any BB'."""
     base = EVENT_BASE_LABEL[event_id]
     prefix = abbrev_name(player_name) if player_name != "Any" else "Any"
     label = f"{prefix} {base}"
-    # Hard-cap at 9 chars to preserve column alignment
-    return label[:9]
+    # Hard-cap at 6 chars to preserve column alignment
+    return label[:6]
 
 
 # ---------------------------------------------------------------------------

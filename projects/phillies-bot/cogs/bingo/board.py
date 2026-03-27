@@ -14,8 +14,9 @@ import discord
 from .events import make_fingerprint, WIN_TYPE_LABELS
 from .win_checker import build_marked_grid
 
-# Column width for the board code-block (monospace alignment)
-_COL_W = 10
+# Column width for the board code-block (monospace alignment).
+# 6 chars × 5 columns = 30 chars total, fits mobile Discord (~32-35 char wrap).
+_COL_W = 6
 
 
 def generate_layout(pool_size: int, user_seed: str) -> list[list[int]]:
@@ -66,7 +67,7 @@ def render_board_embed(
 
     lines: list[str] = []
     # Header
-    header = "  ".join(c.ljust(_COL_W) for c in ["B", "I", "N", "G", "O"])
+    header = "".join(c.ljust(_COL_W) for c in ["B", "I", "N", "G", "O"])
     lines.append(header)
     lines.append("")
 
@@ -87,7 +88,9 @@ def render_board_embed(
                 sym = "⬜"
                 lbl = pool_squares[idx]["label"]
 
-            symbol_row.append(sym.ljust(_COL_W))
+            # Emoji are 2 monospace units wide; pad with _COL_W-2 spaces so
+            # the symbol row aligns with the label row below it.
+            symbol_row.append(sym + " " * (_COL_W - 2))
             label_row.append(lbl.ljust(_COL_W))
 
         lines.append("".join(symbol_row))
