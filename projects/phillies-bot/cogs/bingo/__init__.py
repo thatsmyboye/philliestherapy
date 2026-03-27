@@ -94,6 +94,12 @@ class BingoCog(commands.Cog, name="Bingo"):
 
     # ── Channel routing ───────────────────────────────────────────────────────
 
+    def _effective_channel_id(self, interaction: discord.Interaction) -> int:
+        """Return parent channel ID if invoked in a thread, otherwise the channel ID."""
+        if isinstance(interaction.channel, discord.Thread):
+            return interaction.channel.parent_id or interaction.channel_id
+        return interaction.channel_id
+
     def _resolve_game(self, channel_id: int) -> Optional[tuple]:
         """
         Return (store, scores, announce_channel_id, variant) for the given channel,
@@ -118,7 +124,7 @@ class BingoCog(commands.Cog, name="Bingo"):
     async def bingo_join(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
-        game_ctx = self._resolve_game(interaction.channel_id)
+        game_ctx = self._resolve_game(self._effective_channel_id(interaction))
         if game_ctx is None:
             await interaction.followup.send(
                 "⚾ Bingo isn't available in this channel.",
@@ -194,7 +200,7 @@ class BingoCog(commands.Cog, name="Bingo"):
     async def bingo_check(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
-        game_ctx = self._resolve_game(interaction.channel_id)
+        game_ctx = self._resolve_game(self._effective_channel_id(interaction))
         if game_ctx is None:
             await interaction.followup.send(
                 "⚾ Bingo isn't available in this channel.",
@@ -248,7 +254,7 @@ class BingoCog(commands.Cog, name="Bingo"):
     async def bingo_leaderboard(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer()
 
-        game_ctx = self._resolve_game(interaction.channel_id)
+        game_ctx = self._resolve_game(self._effective_channel_id(interaction))
         if game_ctx is None:
             await interaction.followup.send(
                 "⚾ Bingo isn't available in this channel.",
