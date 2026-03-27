@@ -82,6 +82,52 @@ class Leaderboard:
         log.info(f"Leaderboard saved: {result.pitcher_name} {result.game_date} → {result.total_score}")
         return True
 
+    def record_or_update(self, par_result) -> None:
+        """Add a game record, replacing any existing record for the same
+        pitcher + date.  Used when re-grading a Final game to correct stats
+        that were captured prematurely during a live exit-detection."""
+        from .scoring import PARResult
+        result: PARResult = par_result
+        data = result.data
+
+        rec = GameRecord(
+            pitcher_name=result.pitcher_name,
+            pitcher_id=result.pitcher_id,
+            game_date=result.game_date,
+            opponent=result.opponent,
+            score=result.total_score,
+            grade=result.grade_letter,
+            ip=data.innings_pitched_display,
+            k=data.strikeouts,
+            bb=data.walks,
+            er=data.earned_runs,
+            h=data.hits,
+        )
+
+        for i, r in enumerate(self._records):
+            if r.pitcher_id == result.pitcher_id and r.game_date == result.game_date:
+                self._records[i] = rec
+                self._save()
+                log.info(
+                    f"Leaderboard updated: {result.pitcher_name} {result.game_date}"
+                    f" → {result.total_score} ({data.innings_pitched_display} IP)"
+                )
+                return
+
+        self._records.append(rec)
+        self._save()
+        log.info(
+            f"Leaderboard saved: {result.pitcher_name} {result.game_date}"
+            f" → {result.total_score} ({data.innings_pitched_display} IP)"
+        )
+
+    def get_record(self, pitcher_id: int, game_date: str) -> Optional[GameRecord]:
+        """Return the stored record for a pitcher on a given date, or None."""
+        for r in self._records:
+            if r.pitcher_id == pitcher_id and r.game_date == game_date:
+                return r
+        return None
+
     # ─── Queries ─────────────────────────────────────────────────────────────
 
     def get_pitcher_average(self, pitcher_id: int) -> Optional[float]:
