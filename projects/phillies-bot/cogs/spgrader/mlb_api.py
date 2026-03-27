@@ -247,23 +247,34 @@ class MLBClient:
         starters.sort(key=lambda s: s["par"], reverse=True)
         return starters
 
+    async def get_team_abbreviation_map(self) -> dict[int, str]:
+        """Return a mapping of MLBAM team ID → 3-letter abbreviation."""
+        data = await self.get(f"{BASE}/teams", params={"sportId": 1})
+        return {
+            t["id"]: t.get("abbreviation", t.get("name", "???")[:3].upper())
+            for t in data.get("teams", [])
+        }
+
     async def get_league_season_pitching_leaders(self, season: int, limit: int = 15) -> list[dict]:
         """
         Return the top starting pitcher season lines ranked by PAR.
         Each entry: name, team, ip, par, gs
         """
-        data = await self.get(
-            f"{BASE}/stats",
-            params={
-                "stats": "season",
-                "group": "pitching",
-                "gameType": "R",
-                "season": season,
-                "sportId": 1,
-                "playerPool": "all",
-                "limit": 50,
-                "sortStat": "inningsPitched",
-            }
+        data, abbr_map = await asyncio.gather(
+            self.get(
+                f"{BASE}/stats",
+                params={
+                    "stats": "season",
+                    "group": "pitching",
+                    "gameType": "R",
+                    "season": season,
+                    "sportId": 1,
+                    "playerPool": "all",
+                    "limit": 50,
+                    "sortStat": "inningsPitched",
+                }
+            ),
+            self.get_team_abbreviation_map(),
         )
         leaders = []
         for split in data.get("stats", [{}])[0].get("splits", []):
@@ -277,9 +288,10 @@ class MLBClient:
             era_str = stat.get("era", "-.--")
             k = stat.get("strikeOuts", 0)
             bb = stat.get("baseOnBalls", 0)
+            team_abbrev = team.get("abbreviation") or abbr_map.get(team.get("id"), "???")
             leaders.append({
                 "name": player.get("fullName", "Unknown"),
-                "team": team.get("abbreviation", "???"),
+                "team": team_abbrev,
                 "ip": ip_str,
                 "par": _estimate_season_par(ip_str, era_str, k, bb, gs),
                 "gs": gs,
