@@ -470,10 +470,10 @@ def detect_linescore_events(
     prev_snapshot: Optional[dict],
     already_marked: set[str],
     pool_squares: list[dict],
-) -> list[str]:
+) -> tuple[list[str], dict]:
     """
     Check feed's linescore for LEAD_CHANGE, EXTRA_INN, and PHI_COMEBACK.
-    Returns list of newly triggered fingerprints.
+    Returns (fingerprints, new_snapshot).
 
     prev_snapshot: {"phi_score": int, "opp_score": int, "inning": int} or None
     """
