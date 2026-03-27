@@ -152,7 +152,9 @@ class GameMonitor:
 
         # Save to leaderboard — update any existing record so a premature
         # live-detection grade is replaced by the final accurate stats.
-        self.leaderboard.record_or_update(result)
+        # Spring training games are not recorded on the leaderboard.
+        if not pitcher_data.is_spring_training:
+            self.leaderboard.record_or_update(result)
 
         tg.reported = True
         if status == "Final":

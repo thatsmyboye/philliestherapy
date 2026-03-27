@@ -3,7 +3,7 @@ Discord embed builder for SP performance reports.
 """
 
 import discord
-from datetime import datetime
+from datetime import datetime, timezone
 from .scoring import PARResult, ComponentScore
 from .leaderboard import Leaderboard, GameRecord
 
@@ -67,7 +67,7 @@ def build_embed(result: PARResult, lb: Leaderboard) -> discord.Embed:
     embed = discord.Embed(
         title=title,
         color=color,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
     embed.set_footer(text="Pitcher Ace Rating (PAR) · Phillies Therapy Bot")
 
@@ -151,7 +151,7 @@ def build_leaderboard_embed(lb: Leaderboard, page: str = "averages") -> discord.
         embed = discord.Embed(
             title="🏆  Phillies Therapy PAR Leaderboard — Season Averages",
             color=PHILLIES_RED,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         top = lb.top_averages(n=10, min_games=1)
         if not top:
@@ -174,7 +174,7 @@ def build_leaderboard_embed(lb: Leaderboard, page: str = "averages") -> discord.
         embed = discord.Embed(
             title="⭐  Phillies Therapy PAR Leaderboard — Top Performances",
             color=PHILLIES_RED,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         top = lb.top_individual(n=10)
         if not top:
@@ -196,9 +196,9 @@ def build_leaderboard_embed(lb: Leaderboard, page: str = "averages") -> discord.
         embed = discord.Embed(
             title="📅  Phillies Therapy PAR Leaderboard — Recent Games",
             color=PHILLIES_RED,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
-        recent = sorted(lb._records, key=lambda r: r.game_date, reverse=True)[:10]
+        recent = sorted(lb._regular_season_records, key=lambda r: r.game_date, reverse=True)[:10]
         if not recent:
             embed.description = "_No games recorded yet._"
         else:
@@ -214,6 +214,63 @@ def build_leaderboard_embed(lb: Leaderboard, page: str = "averages") -> discord.
                 )
             embed.description = "```\n" + "\n".join(rows) + "\n```"
 
+    embed.set_footer(text="Pitcher Ace Rating (PAR) · Phillies Therapy Bot")
+    return embed
+
+
+def build_league_embed(
+    starters: list[dict],
+    date_label: str,
+    is_season: bool = False,
+) -> discord.Embed:
+    """Build an embed showing top league-wide SP performances."""
+    if is_season:
+        title = f"🌐  MLB Top Starters — {date_label} Season"
+    else:
+        title = f"🌐  MLB Top Starters — {date_label}"
+
+    embed = discord.Embed(
+        title=title,
+        color=0x002D72,  # MLB blue
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    if not starters:
+        embed.description = "_No starter data available._"
+        embed.set_footer(text="Pitcher Ace Rating (PAR) · Phillies Therapy Bot")
+        return embed
+
+    if is_season:
+        # Season view: Name, Team, IP, ERA, K, BB, W-L
+        NAME_W = 20
+        TEAM_W = 4
+        header = f"{'#':>3}  {'Name':<{NAME_W}}  {'Tm':<{TEAM_W}}  {'IP':>5}  {'ERA':>5}  {'K':>4}  {'BB':>3}  {'W-L':>5}  {'GS':>3}"
+        sep = "─" * len(header)
+        rows = [header, sep]
+        for i, s in enumerate(starters[:15]):
+            name = s["name"][:NAME_W]
+            wl = f"{s['w']}-{s['l']}"
+            rows.append(
+                f"{i+1:>3}  {name:<{NAME_W}}  {s['team']:<{TEAM_W}}  "
+                f"{s['ip']:>5}  {s['era']:>5}  {s['k']:>4}  {s['bb']:>3}  "
+                f"{wl:>5}  {s['gs']:>3}"
+            )
+    else:
+        # Daily view: Name, Team, IP, K, BB, ER, H, W/L
+        NAME_W = 20
+        TEAM_W = 4
+        header = f"{'#':>3}  {'Name':<{NAME_W}}  {'Tm':<{TEAM_W}}  {'IP':>4}  {'K':>3}  {'BB':>3}  {'ER':>3}  {'H':>3}  {'Dec':>3}"
+        sep = "─" * len(header)
+        rows = [header, sep]
+        for i, s in enumerate(starters[:15]):
+            name = s["name"][:NAME_W]
+            rows.append(
+                f"{i+1:>3}  {name:<{NAME_W}}  {s['team']:<{TEAM_W}}  "
+                f"{s['ip']:>4}  {s['k']:>3}  {s['bb']:>3}  {s['er']:>3}  "
+                f"{s['h']:>3}  {s['result']:>3}"
+            )
+
+    embed.description = "```\n" + "\n".join(rows) + "\n```"
     embed.set_footer(text="Pitcher Ace Rating (PAR) · Phillies Therapy Bot")
     return embed
 
