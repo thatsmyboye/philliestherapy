@@ -222,6 +222,47 @@ def assign_any_pool(event_ids: list[str]) -> list[dict]:
     ]
 
 
+def assign_teams_to_pool(
+    event_ids: list[str],
+    game_date: str,
+    teams: list[dict],
+) -> list[dict]:
+    """
+    Build the full list of 24 square dicts for the league bingo variant,
+    assigning a specific MLB team (50/50) or "Any" to each BATTER/PITCHER event.
+    GAME events always get "Any".
+
+    teams entries: {id: int, abbreviation: str}
+    team id is stored in player_id; abbreviation in player_name.
+    """
+    squares: list[dict] = []
+    for idx, event_id in enumerate(event_ids):
+        category = EVENT_CATEGORY[event_id]
+        rng = random.Random(f"{game_date}:league:{event_id}:{idx}")
+
+        if category == GAME:
+            player_id = None
+            player_name = "Any"
+        else:
+            if teams and rng.random() >= 0.5:
+                team = rng.choice(teams)
+                player_id = team["id"]
+                player_name = team["abbreviation"]
+            else:
+                player_id = None
+                player_name = "Any"
+
+        squares.append({
+            "event_id": event_id,
+            "player_id": player_id,
+            "player_name": player_name,
+            "label": make_label(event_id, player_name),
+            "category": category,
+        })
+
+    return squares
+
+
 def make_fingerprint(square: dict) -> str:
     """Return a unique key for a square, e.g. 'HR:656775' or 'WALK:any'."""
     pid = square.get("player_id")
@@ -411,6 +452,7 @@ def detect_events(
 
 def detect_events_league(
     play: dict,
+    feed: dict,
     pool_squares: list[dict],
     already_marked: set[str],
 ) -> list[str]:
@@ -418,19 +460,22 @@ def detect_events_league(
     Like detect_events() but fires for any team in any game (no Phillies filter).
     Used by the league bingo monitor.
 
+    When a square has player_id set, it holds a team ID; the play's batting or
+    pitching team must match for BATTER/PITCHER events respectively.
+
     Does NOT handle linescore-level events (LEAD_CHANGE, EXTRA_INN, COMEBACK).
     """
     if not play.get("about", {}).get("isComplete", False):
         return []
 
     result = play.get("result", {})
-    matchup = play.get("matchup", {})
 
     event_type: str = result.get("eventType", "")
     desc: str = result.get("description", "").lower()
     rbi: int = result.get("rbi", 0)
-    batter_id: Optional[int] = matchup.get("batter", {}).get("id")
-    pitcher_id: Optional[int] = matchup.get("pitcher", {}).get("id")
+
+    batting_team  = _get_batting_team_id(play, feed)
+    pitching_team = _get_pitching_team_id(play, feed)
 
     triggered: list[str] = []
 
@@ -440,17 +485,17 @@ def detect_events_league(
             continue
 
         cat = square["category"]
-        pid = square["player_id"]  # always None for league (all "Any")
+        pid = square["player_id"]  # None == "Any team"; otherwise holds a team ID
         eid = square["event_id"]
 
         matched = False
 
         if cat == BATTER:
-            if pid is None or batter_id == pid:
+            if pid is None or batting_team == pid:
                 matched = _matches_batter_event(eid, event_type, desc, rbi)
 
         elif cat == PITCHER:
-            if pid is None or pitcher_id == pid:
+            if pid is None or pitching_team == pid:
                 matched = _matches_pitcher_event(eid, event_type, desc)
 
         elif cat == GAME:
@@ -593,23 +638,39 @@ def detect_linescore_events_league(
 # Lineup re-roll
 # ---------------------------------------------------------------------------
 
-def reroll_scratched_players(
+def reroll_any_from_lineup(
     pool_squares: list[dict],
-    lineup_player_ids: set[int],
+    lineup_roster: list[dict],
     game_date: str,
 ) -> list[dict]:
     """
-    For any square with a specific player not in lineup_player_ids,
-    replace that square's player assignment with "Any".
+    For BATTER/PITCHER squares still assigned "Any", assign a specific player
+    from the announced lineup.  Already-assigned players are kept as-is
+    regardless of whether they appear in the lineup.
 
-    Returns the updated pool_squares list (mutated in place, also returned).
+    Falls back to "Any" if no compatible lineup player exists for a square.
+
+    lineup_roster entries: {id: int, fullName: str, is_pitcher: bool}
+    Returns pool_squares (mutated in place).
     """
-    for square in pool_squares:
-        pid = square.get("player_id")
-        if pid is not None and pid not in lineup_player_ids:
-            square["player_id"] = None
-            square["player_name"] = "Any"
-            square["label"] = make_label(square["event_id"], "Any")
+    position_players = [p for p in lineup_roster if not p.get("is_pitcher")]
+    pitchers = [p for p in lineup_roster if p.get("is_pitcher")]
+
+    for idx, square in enumerate(pool_squares):
+        if square.get("player_id") is not None:
+            continue  # already has a player, skip
+        if square["category"] == GAME:
+            continue  # GAME events always "Any"
+
+        rng = random.Random(f"{game_date}:lineup:{square['event_id']}:{idx}")
+        pool = position_players if square["category"] == BATTER else pitchers
+        if pool:
+            player = rng.choice(pool)
+            last = player["fullName"].split()[-1]
+            square["player_id"] = player["id"]
+            square["player_name"] = last
+            square["label"] = make_label(square["event_id"], last)
+
     return pool_squares
 
 
