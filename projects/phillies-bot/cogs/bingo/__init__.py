@@ -47,6 +47,7 @@ from .events import (
     get_phillies_lineup_ids,
     pick_win_type,
     reroll_any_from_lineup,
+    WIN_TYPE_LABELS,
 )
 from .formatter import (
     make_join_confirm_embed,
@@ -181,10 +182,35 @@ class BingoCog(commands.Cog, name="Bingo"):
             return
 
         if store.has_player(uid):
-            await interaction.followup.send(
-                "You've already joined today's Bingo game! Use `/bingo check` to see your board.",
-                ephemeral=True,
+            # Allow one re-roll before the game starts (no squares marked yet)
+            if store.get_marked_set():
+                await interaction.followup.send(
+                    "The game has already started — your board is locked in! Use `/bingo check` to see your board.",
+                    ephemeral=True,
+                )
+                return
+            if store.has_player_rerolled(uid):
+                await interaction.followup.send(
+                    "You've already used your one re-roll for today. Use `/bingo check` to see your board.",
+                    ephemeral=True,
+                )
+                return
+            # Perform the re-roll with a distinct seed
+            pool = store.event_pool
+            new_layout = generate_layout(len(pool), f"{uid}:{today}:reroll")
+            store.reroll_player(uid, new_layout)
+            scores.ensure_current_season(date.today().year)
+            variant_label = "League" if variant == "league" else "Phillies"
+            win_label = WIN_TYPE_LABELS.get(store.win_type, store.win_type)
+            embed = make_join_confirm_embed(store.win_type, pool, today, variant_label)
+            embed.title = f"🔄 Board Re-rolled — {variant_label} Bingo!"
+            embed.description = (
+                f"Your board has been re-rolled for **{today}**.\n"
+                "This was your one allowed re-roll — your new board is now locked in.\n\n"
+                f"**Today's win condition:** {win_label}\n\n"
+                "Use `/bingo check` anytime to see your current board."
             )
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         pool = store.event_pool
