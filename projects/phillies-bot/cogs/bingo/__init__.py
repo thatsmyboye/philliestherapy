@@ -30,13 +30,14 @@ from utils.mlb_data import (
     get_todays_non_phillies_games,
     get_live_game_data,
     get_phillies_roster_full,
+    get_team_abbreviations,
     is_spring_training,
 )
 
 from .board import generate_layout, render_board_embed
 from .events import (
     assign_players_to_pool,
-    assign_any_pool,
+    assign_teams_to_pool,
     detect_events,
     detect_events_league,
     detect_linescore_events,
@@ -45,7 +46,7 @@ from .events import (
     draw_daily_pool_league,
     get_phillies_lineup_ids,
     pick_win_type,
-    reroll_scratched_players,
+    reroll_any_from_lineup,
 )
 from .formatter import (
     make_join_confirm_embed,
@@ -421,7 +422,21 @@ class BingoCog(commands.Cog, name="Bingo"):
         win_type = pick_win_type(today + ":league")
         event_ids = draw_daily_pool_league(today)
 
-        pool_squares = assign_any_pool(event_ids)
+        try:
+            abbr_map = await loop.run_in_executor(None, get_team_abbreviations)
+        except Exception:
+            abbr_map = {}
+
+        seen_team_ids: set[int] = set()
+        teams: list[dict] = []
+        for g in games:
+            for id_key in ("away_id", "home_id"):
+                tid = g.get(id_key)
+                if tid and tid not in seen_team_ids:
+                    seen_team_ids.add(tid)
+                    teams.append({"id": tid, "abbreviation": abbr_map.get(tid, "???")})
+
+        pool_squares = assign_teams_to_pool(event_ids, today, teams)
         self._league_store.reset_for_new_day(today, game_pks, win_type, pool_squares)
         print(f"[bingo:league] New game day: {today} | win type: {win_type} | {len(pool_squares)} squares")
 
@@ -433,13 +448,23 @@ class BingoCog(commands.Cog, name="Bingo"):
         feed: dict,
         today: str,
     ) -> None:
-        # Lineup re-roll (once per day)
+        # Lineup re-roll (once per day): populate "Any" cells with confirmed lineup players
         if not self._store.lineups_checked:
             lineup_ids = get_phillies_lineup_ids(feed)
             if lineup_ids:
-                updated_pool = reroll_scratched_players(
+                game_players = feed.get("gameData", {}).get("players", {})
+                lineup_roster = [
+                    {
+                        "id": pdata["id"],
+                        "fullName": pdata.get("fullName", ""),
+                        "is_pitcher": pdata.get("primaryPosition", {}).get("abbreviation", "") == "P",
+                    }
+                    for pdata in game_players.values()
+                    if pdata.get("id") in lineup_ids
+                ]
+                updated_pool = reroll_any_from_lineup(
                     self._store.event_pool,
-                    lineup_ids,
+                    lineup_roster,
                     today,
                 )
                 self._store.event_pool = updated_pool
@@ -498,7 +523,7 @@ class BingoCog(commands.Cog, name="Bingo"):
 
         new_fingerprints: list[str] = []
         for play in new_plays:
-            triggered = detect_events_league(play, pool, marked)
+            triggered = detect_events_league(play, feed, pool, marked)
             for fp in triggered:
                 if self._league_store.mark_square(fp):
                     new_fingerprints.append(fp)

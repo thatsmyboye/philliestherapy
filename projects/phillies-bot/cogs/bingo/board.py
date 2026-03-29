@@ -15,8 +15,9 @@ from .events import make_fingerprint, WIN_TYPE_LABELS
 from .win_checker import build_marked_grid
 
 # Column width for the board code-block (monospace alignment).
-# 6 chars × 5 columns = 30 chars total, fits mobile Discord (~32-35 char wrap).
-_COL_W = 6
+# 7 chars × 5 columns = 35 chars total; the extra char adds a 1-space gap
+# between adjacent cell labels, preventing them from visually colliding on mobile.
+_COL_W = 7
 
 
 def generate_layout(pool_size: int, user_seed: str) -> list[list[int]]:
