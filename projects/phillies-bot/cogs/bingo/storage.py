@@ -112,8 +112,19 @@ class BingoStore:
             "layout": layout,
             "bingo": False,
             "bingo_achieved_at": None,
+            "rerolled": False,
         }
         self.save()
+
+    def reroll_player(self, user_id: str, new_layout: list[list[int]]) -> None:
+        uid = str(user_id)
+        self._data["players"][uid]["layout"] = new_layout
+        self._data["players"][uid]["rerolled"] = True
+        self.save()
+
+    def has_player_rerolled(self, user_id: str) -> bool:
+        player = self._data["players"].get(str(user_id))
+        return bool(player and player.get("rerolled", False))
 
     def get_player(self, user_id: str) -> Optional[dict]:
         return self._data["players"].get(str(user_id))
