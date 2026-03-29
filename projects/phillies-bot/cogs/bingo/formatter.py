@@ -106,6 +106,68 @@ def make_win_announcement_embed(
 # Season leaderboard
 # ---------------------------------------------------------------------------
 
+def make_key_embed() -> discord.Embed:
+    """
+    Ephemeral reference card explaining the board's symbols and abbreviations.
+    """
+    embed = discord.Embed(
+        title="📖 Bingo Board Key",
+        colour=discord.Colour.blurple(),
+    )
+
+    embed.add_field(
+        name="Symbols",
+        value="✅  Square marked\n⬜  Not yet marked\n⭐  FREE (always marked)",
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Label Format",
+        value=(
+            "`~HR`  = **any** player hit a HR\n"
+            "`TuHR` = **Turner** hit a HR\n"
+            "*(first 2 letters of last name + event code)*"
+        ),
+        inline=False,
+    )
+
+    batting = (
+        "`HR` Home Run\n"
+        "`2B` Double\n"
+        "`3B` Triple\n"
+        "`SB` Stolen Base\n"
+        "`CS` Caught Stealing\n"
+        "`HP` Hit by Pitch\n"
+        "`BB` Walk\n"
+        "`IB` Intentional Walk\n"
+        "`KS` Strikeout (swing)\n"
+        "`KL` Strikeout (look)\n"
+        "`Bn` Sac Bunt\n"
+        "`SF` Sac Fly\n"
+        "`FC` Fielder's Choice\n"
+        "`GS` Grand Slam"
+    )
+    game = (
+        "`K`  Pitcher strikeout\n"
+        "`BK` Balk\n"
+        "`WP` Wild Pitch\n"
+        "`PO` Pickoff\n"
+        "`PB` Passed Ball\n"
+        "`E`  Error\n"
+        "`DP` Double Play\n"
+        "`TP` Triple Play\n"
+        "`CI` Catcher's Interference\n"
+        "`LC` Lead Change\n"
+        "`XI` Extra Innings\n"
+        "`CB` Comeback Win"
+    )
+
+    embed.add_field(name="Batting / Fielding", value=batting, inline=True)
+    embed.add_field(name="Pitching / Game", value=game, inline=True)
+
+    return embed
+
+
 def make_leaderboard_embed(
     entries: list[dict],
     guild: Optional[discord.Guild],
