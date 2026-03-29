@@ -110,18 +110,17 @@ WIN_TYPE_LABELS: dict[str, str] = {
 # Player name abbreviation
 # ---------------------------------------------------------------------------
 
-def abbrev_name(last_name: str) -> str:
-    """Return up to 3 chars of a last name for board display."""
-    return last_name[:3] if len(last_name) > 3 else last_name
-
-
 def make_label(event_id: str, player_name: str) -> str:
-    """Build the board cell label, e.g. 'Sch HR' or 'Any BB'."""
+    """Build a ≤4-char board cell label for a 5-char column (_COL_W=5).
+
+    Format:
+      Any player  →  "~" + event code  e.g. "~HR", "~SB"  (3 chars max)
+      Specific    →  first-2 of last name + event code     (3–4 chars)
+    """
     base = EVENT_BASE_LABEL[event_id]
-    prefix = abbrev_name(player_name) if player_name != "Any" else "Any"
-    label = f"{prefix} {base}"
-    # Hard-cap at 6 chars to preserve column alignment
-    return label[:6]
+    if player_name == "Any":
+        return f"~{base}"
+    return (player_name[:2] + base)[:4]
 
 
 # ---------------------------------------------------------------------------
