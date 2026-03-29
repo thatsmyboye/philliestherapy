@@ -15,9 +15,10 @@ from .events import make_fingerprint, WIN_TYPE_LABELS
 from .win_checker import build_marked_grid
 
 # Column width for the board code-block (monospace alignment).
-# 7 chars × 5 columns = 35 chars total; the extra char adds a 1-space gap
-# between adjacent cell labels, preventing them from visually colliding on mobile.
-_COL_W = 7
+# 5 chars × 5 columns = 25 chars total — fits comfortably inside Discord
+# mobile's code-block width (~28 display chars on iPhone 15).
+# Each cell: emoji (2 display units) + 3 spaces = 5 display units.
+_COL_W = 5
 
 
 def generate_layout(pool_size: int, user_seed: str) -> list[list[int]]:
@@ -53,7 +54,7 @@ def render_board_embed(
 
     Layout uses a monospace code block with two lines per board row:
       Line 1 — status symbols: ✅  ⬜  ⭐  ⬜  ✅
-      Line 2 — cell labels:    SchwHR AnyBB FREE  TurnK  MachDP
+      Line 2 — cell labels:    TuHR ~BB FREE ~DP ScCS
     """
     win_label = WIN_TYPE_LABELS.get(win_type, win_type)
 

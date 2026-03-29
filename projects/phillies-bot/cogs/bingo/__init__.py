@@ -5,6 +5,7 @@ Commands (channel-routed):
   /bingo join        — Join today's bingo game (once per game day)
   /bingo check       — View your current board (ephemeral)
   /bingo leaderboard — Show top 5 season scores (public)
+  /bingo key         — Glossary of board symbols and event abbreviations (ephemeral)
 
 The bot routes each command to the correct game variant based on the channel:
   BINGO_CHANNEL_ID       → Phillies bingo (Phillies-only events, roster-assigned squares)
@@ -51,6 +52,7 @@ from .events import (
 )
 from .formatter import (
     make_join_confirm_embed,
+    make_key_embed,
     make_leaderboard_embed,
     make_win_announcement_embed,
 )
@@ -303,6 +305,15 @@ class BingoCog(commands.Cog, name="Bingo"):
         variant_label = "League" if variant == "league" else "Phillies"
         embed = make_leaderboard_embed(entries, interaction.guild, year, variant_label)
         await interaction.followup.send(embed=embed)
+
+    # /bingo key ──────────────────────────────────────────────────────────────
+
+    @bingo_group.command(
+        name="key",
+        description="Show the glossary of board symbols and event abbreviations",
+    )
+    async def bingo_key(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(embed=make_key_embed(), ephemeral=True)
 
     # ── Background monitor: Phillies ──────────────────────────────────────────
 
