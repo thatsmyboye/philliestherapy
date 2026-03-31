@@ -243,8 +243,8 @@ class MLBClient:
                         "result": result_str,
                     })
 
-        # Sort: highest PAR first
-        starters.sort(key=lambda s: s["par"], reverse=True)
+        # Sort: most innings pitched first
+        starters.sort(key=lambda s: s["ip"], reverse=True)
         return starters
 
     async def get_team_abbreviation_map(self) -> dict[int, str]:

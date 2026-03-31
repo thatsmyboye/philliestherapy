@@ -326,6 +326,49 @@ class GameMonitor:
 
         return data
 
+    async def backfill_game_date(self, game_date: str) -> list:
+        """Fetch and grade all completed Phillies games on a past date.
+
+        Reuses the same pipeline as check_games() but targets a specific
+        historical date and skips games already in the leaderboard.
+        """
+        results = []
+        games = await self.api.get_todays_schedule(Config.PHILLIES_TEAM_ID, game_date=game_date)
+
+        for game in games:
+            if game.get("status", {}).get("abstractGameState") != "Final":
+                continue
+
+            game_pk = game["gamePk"]
+            tg = TrackedGame(game_pk, game_date, game_type=game.get("gameType", "R"))
+
+            feed = await self.api.get_live_feed(game_pk)
+            game_info = feed.get("gameData", {})
+            home_id = game_info.get("teams", {}).get("home", {}).get("id")
+            tg.phillies_side = "home" if home_id == Config.PHILLIES_TEAM_ID else "away"
+
+            sp = self._get_starting_pitcher(feed, tg.phillies_side)
+            if not sp:
+                log.warning(f"Backfill: no SP found for game {game_pk} on {game_date}")
+                continue
+            tg.sp_id, tg.sp_name = sp
+            tg.sp_exited = True
+            tg.inning_complete = True
+
+            pitcher_data = await self._build_pitcher_data(tg, feed, game_info)
+            if pitcher_data is None:
+                log.warning(f"Backfill: could not build pitcher data for {tg.sp_name} on {game_date}")
+                continue
+
+            result = grade_pitcher(pitcher_data)
+            if not pitcher_data.is_spring_training:
+                self.leaderboard.record_or_update(result)
+            embed = build_embed(result, self.leaderboard)
+            results.append((embed, None))
+            log.info(f"Backfill: recorded {tg.sp_name} on {game_date} → {result.total_score}")
+
+        return results
+
     def _ip_to_outs(self, ip_str: str) -> int:
         """Convert '5.2' → 17 outs, '6.0' → 18 outs."""
         try:
