@@ -972,17 +972,19 @@ def get_player_phillies_season_stats(player_id: int, year: int) -> dict:
     Stats dicts are empty if the player had no appearances in that role.
     """
     try:
-        data = statsapi.player_stat_data(
-            player_id,
-            group="[hitting,pitching]",
-            type="yearByYear",
+        data = statsapi.get(
+            "person",
+            {
+                "personId": player_id,
+                "hydrate": "stats(group=[hitting,pitching],type=yearByYear,sportId=1),currentTeam",
+            },
         )
         result: dict[str, dict] = {"hitting": {}, "pitching": {}}
-        for group in data.get("stats", []):
-            group_name = group.get("group", {}).get("displayName", "").lower()
+        for stat_group in data.get("people", [{}])[0].get("stats", []):
+            group_name = stat_group.get("group", {}).get("displayName", "").lower()
             if group_name not in ("hitting", "pitching"):
                 continue
-            for split in group.get("splits", []):
+            for split in stat_group.get("splits", []):
                 if str(split.get("season", "")) != str(year):
                     continue
                 team_id = split.get("team", {}).get("id")
