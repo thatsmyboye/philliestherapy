@@ -210,6 +210,48 @@ class SPGraderCog(commands.Cog, name="SPGrader"):
         embed.set_footer(text="Pitcher Ace Rating (PAR) · Phillies Therapy Bot")
         await interaction.followup.send(embed=embed)
 
+    @app_commands.command(
+        name="backfill",
+        description="[Admin] Backfill PAR data for a specific past date"
+    )
+    @app_commands.describe(date="Date to backfill (YYYY-MM-DD)")
+    async def backfill(self, interaction: discord.Interaction, date: str) -> None:
+        await interaction.response.defer(ephemeral=True)
+
+        app_info = await self.bot.application_info()
+        if interaction.user.id != app_info.owner.id:
+            await interaction.followup.send("❌ Admin only.", ephemeral=True)
+            return
+
+        try:
+            from datetime import datetime as _dt
+            _dt.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            await interaction.followup.send(
+                "❌ Invalid date format. Use YYYY-MM-DD (e.g. `2026-03-27`).",
+                ephemeral=True,
+            )
+            return
+
+        results = await self.monitor.backfill_game_date(date)
+        if not results:
+            await interaction.followup.send(
+                f"No completed Phillies games found for **{date}**.", ephemeral=True
+            )
+            return
+
+        channel = self.bot.get_channel(self._channel_id)
+        for embed, file in results:
+            if channel:
+                if file:
+                    await channel.send(embed=embed, file=file)
+                else:
+                    await channel.send(embed=embed)
+
+        await interaction.followup.send(
+            f"✅ Backfilled **{len(results)}** game(s) for **{date}**.", ephemeral=True
+        )
+
     @par.autocomplete("pitcher")
     async def par_pitcher_autocomplete(
         self,
