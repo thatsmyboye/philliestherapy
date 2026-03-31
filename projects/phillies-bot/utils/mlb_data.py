@@ -442,7 +442,7 @@ def get_phillies_roster_full() -> list[dict]:
 
     try:
         data = statsapi.get(
-            "roster",
+            "team_roster",
             {
                 "teamId": PHILLIES_TEAM_ID,
                 "rosterType": "40Man",
@@ -669,7 +669,7 @@ def get_opponent_roster_batters(team_id: int) -> list[dict]:
 
     try:
         data = statsapi.get(
-            "roster",
+            "team_roster",
             {"teamId": team_id, "rosterType": "active", "season": CURRENT_SEASON},
         )
         players = []
@@ -942,7 +942,7 @@ def get_phillies_historical_roster(year: int) -> list[dict]:
 
     try:
         data = statsapi.get(
-            "roster",
+            "team_roster",
             {
                 "teamId": PHILLIES_TEAM_ID,
                 "rosterType": "fullSeason",
