@@ -923,3 +923,72 @@ def get_wildcard_standings() -> dict[str, list[dict]]:
         result[league_key].extend(teams)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Historical roster / stats helpers (for /remember)
+# ---------------------------------------------------------------------------
+
+def get_phillies_historical_roster(year: int) -> list[dict]:
+    """
+    Return the full-season roster for the Phillies in the given year (24-hour cache).
+
+    Each entry: {id, fullName, position, is_pitcher}
+    """
+    key = f"historical_roster_{year}"
+    cached = _cache_get(key, 24 * 3600)
+    if cached is not None:
+        return cached
+
+    try:
+        data = statsapi.get(
+            "roster",
+            {
+                "teamId": PHILLIES_TEAM_ID,
+                "rosterType": "fullSeason",
+                "season": year,
+            },
+        )
+        players = []
+        for entry in data.get("roster", []):
+            position = entry.get("position", {}).get("abbreviation", "?")
+            players.append({
+                "id": entry["person"]["id"],
+                "fullName": entry["person"]["fullName"],
+                "position": position,
+                "is_pitcher": position == "P",
+            })
+        _cache_set(key, players)
+        return players
+    except Exception:
+        return []
+
+
+def get_player_phillies_season_stats(player_id: int, year: int) -> dict:
+    """
+    Return a player's hitting and pitching stats for the given year while on the Phillies.
+
+    Result: {'hitting': {...}, 'pitching': {...}}
+    Stats dicts are empty if the player had no appearances in that role.
+    """
+    try:
+        data = statsapi.player_stat_data(
+            player_id,
+            group="[hitting,pitching]",
+            type="yearByYear",
+        )
+        result: dict[str, dict] = {"hitting": {}, "pitching": {}}
+        for group in data.get("stats", []):
+            group_name = group.get("group", {}).get("displayName", "").lower()
+            if group_name not in ("hitting", "pitching"):
+                continue
+            for split in group.get("splits", []):
+                if str(split.get("season", "")) != str(year):
+                    continue
+                team_id = split.get("team", {}).get("id")
+                if team_id == PHILLIES_TEAM_ID:
+                    result[group_name] = split.get("stat", {})
+                    break
+        return result
+    except Exception:
+        return {"hitting": {}, "pitching": {}}

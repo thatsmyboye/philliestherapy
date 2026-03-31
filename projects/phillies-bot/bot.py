@@ -43,6 +43,7 @@ COGS = [
     "cogs.getaway",
     "cogs.props",
     "cogs.bingo",
+    "cogs.remember",
 ]
 
 
