@@ -2,3 +2,5 @@ discord.py>=2.3.0
 MLB-StatsAPI>=1.7.2
 python-dotenv>=1.0.0
 thefuzz>=0.22.0
+pandas>=2.0.0
+matplotlib>=3.7.0
