@@ -62,7 +62,7 @@ def prepare_statcast_df(rows: list[dict]) -> pd.DataFrame:
         df["pitch_name"] = df.get("pitch_type", pd.Series(dtype=str)).map(
             PITCH_TYPE_TO_NAME
         )
-    else:
+    elif "pitch_type" in df.columns:
         # Fill any blanks using the fallback mapping
         mask = df["pitch_name"].replace("", pd.NA).isna()
         df.loc[mask, "pitch_name"] = df.loc[mask, "pitch_type"].map(PITCH_TYPE_TO_NAME)
