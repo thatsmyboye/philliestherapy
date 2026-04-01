@@ -18,6 +18,7 @@ build/
 
 # Bot state
 projects/phillies-bot/data/state.db
+projects/phillies-bot/data/leaderboard.json
 
 # IDE
 .vscode/
