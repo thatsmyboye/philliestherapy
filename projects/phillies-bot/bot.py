@@ -44,6 +44,7 @@ COGS = [
     "cogs.props",
     "cogs.bingo",
     "cogs.remember",
+    "cogs.sequence",
 ]
 
 
