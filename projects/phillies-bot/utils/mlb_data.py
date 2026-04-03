@@ -505,7 +505,7 @@ def get_career_stats(player_id: int) -> dict:
         )
         result = {}
         for group in data.get("stats", []):
-            group_name = group.get("group", {}).get("displayName", "").lower()
+            group_name = group.get("group", "").lower()
             stats = group.get("stats", {})
             result[group_name] = stats
         return result
@@ -526,7 +526,7 @@ def get_season_stats_by_year(player_id: int) -> list[dict]:
         )
         seasons = []
         for group in data.get("stats", []):
-            group_name = group.get("group", {}).get("displayName", "").lower()
+            group_name = group.get("group", "").lower()
             for season_entry in group.get("splits", []):
                 entry = dict(season_entry.get("stat", {}))
                 entry["season"] = season_entry.get("season", "")
