@@ -63,14 +63,14 @@ class PropsCog(commands.Cog):
         games = await loop.run_in_executor(None, get_todays_phillies_games)
         live_games = [g for g in games if g.get("status") == "In Progress"]
 
-        # Build game_pk → live feed map
-        feeds: dict[int, dict] = {}
-        for g in live_games:
-            game_pk = g.get("game_id")
-            if game_pk:
-                feed = await loop.run_in_executor(None, get_live_game_data, game_pk)
-                if feed:
-                    feeds[game_pk] = feed
+        # Build game_pk → live feed map (fetched in parallel)
+        game_pks = [g["game_id"] for g in live_games if g.get("game_id")]
+        feed_results = await asyncio.gather(
+            *[loop.run_in_executor(None, get_live_game_data, pk) for pk in game_pks]
+        )
+        feeds: dict[int, dict] = {
+            pk: feed for pk, feed in zip(game_pks, feed_results) if feed
+        }
 
         # Evaluate every prop
         prop_values: list[dict] = []
@@ -389,13 +389,13 @@ class PropsCog(commands.Cog):
         games = await loop.run_in_executor(None, get_todays_phillies_games)
         live_games = [g for g in games if g.get("status") == "In Progress"]
 
-        feeds: dict[int, dict] = {}
-        for g in live_games:
-            game_pk = g.get("game_id")
-            if game_pk:
-                feed = await loop.run_in_executor(None, get_live_game_data, game_pk)
-                if feed:
-                    feeds[game_pk] = feed
+        game_pks = [g["game_id"] for g in live_games if g.get("game_id")]
+        feed_results = await asyncio.gather(
+            *[loop.run_in_executor(None, get_live_game_data, pk) for pk in game_pks]
+        )
+        feeds: dict[int, dict] = {
+            pk: feed for pk, feed in zip(game_pks, feed_results) if feed
+        }
 
         prop_values: list[dict] = []
         for prop in props:
@@ -489,14 +489,15 @@ class PropsCog(commands.Cog):
                 )
                 return
 
-        # Resolve both players
+        # Resolve both players in parallel
         loop = asyncio.get_event_loop()
-        p1_id, p1_name, err1 = await loop.run_in_executor(None, lambda: resolve_player(player1))
+        (p1_id, p1_name, err1), (p2_id, p2_name, err2) = await asyncio.gather(
+            loop.run_in_executor(None, lambda: resolve_player(player1)),
+            loop.run_in_executor(None, lambda: resolve_player(player2)),
+        )
         if err1:
             await interaction.followup.send(f"❌ Player 1: {err1}", ephemeral=True)
             return
-
-        p2_id, p2_name, err2 = await loop.run_in_executor(None, lambda: resolve_player(player2))
         if err2:
             await interaction.followup.send(f"❌ Player 2: {err2}", ephemeral=True)
             return
@@ -559,12 +560,13 @@ class PropsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         loop = asyncio.get_event_loop()
-        p1_id, p1_name, err1 = await loop.run_in_executor(None, lambda: resolve_player(player1))
+        (p1_id, p1_name, err1), (p2_id, p2_name, err2) = await asyncio.gather(
+            loop.run_in_executor(None, lambda: resolve_player(player1)),
+            loop.run_in_executor(None, lambda: resolve_player(player2)),
+        )
         if err1:
             await interaction.followup.send(f"❌ Player 1: {err1}", ephemeral=True)
             return
-
-        p2_id, p2_name, err2 = await loop.run_in_executor(None, lambda: resolve_player(player2))
         if err2:
             await interaction.followup.send(f"❌ Player 2: {err2}", ephemeral=True)
             return
