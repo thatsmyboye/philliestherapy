@@ -240,7 +240,7 @@ def get_season_stats(player_id: int, stat: str) -> Optional[float]:
             return None
         all_stats = {"hitting": {}, "pitching": {}}
         for group in data.get("stats", []):
-            group_name = group.get("group", {}).get("displayName", "").lower()
+            group_name = group.get("group", "").lower()
             if group_name in all_stats:
                 all_stats[group_name] = group.get("stats", {})
         _cache_set(cache_key, all_stats)
