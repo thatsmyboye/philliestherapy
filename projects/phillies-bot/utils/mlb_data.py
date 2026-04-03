@@ -538,18 +538,31 @@ def get_season_stats_by_year(player_id: int) -> list[dict]:
 
 
 def get_live_game_data(game_pk: int) -> Optional[dict]:
-    """Return live game data dict from statsapi (no cache)."""
+    """Return live game data dict from statsapi, cached for 25 seconds."""
+    cache_key = f"live_feed_{game_pk}"
+    cached = _cache_get(cache_key, 25)
+    if cached is not None:
+        return cached
     try:
-        return statsapi.get("game", {"gamePk": game_pk})
+        result = statsapi.get("game", {"gamePk": game_pk})
+        if result:
+            _cache_set(cache_key, result)
+        return result
     except Exception:
         return None
 
 
 def get_todays_phillies_games() -> list[dict]:
-    """Return today's Phillies games from the schedule."""
+    """Return today's Phillies games from the schedule, cached for 2 minutes."""
+    cache_key = f"phillies_schedule_{date.today().isoformat()}"
+    cached = _cache_get(cache_key, 120)
+    if cached is not None:
+        return cached
     try:
         today = date.today().strftime("%Y-%m-%d")
-        return statsapi.schedule(date=today, team=PHILLIES_TEAM_ID)
+        result = statsapi.schedule(date=today, team=PHILLIES_TEAM_ID)
+        _cache_set(cache_key, result)
+        return result
     except Exception:
         return []
 

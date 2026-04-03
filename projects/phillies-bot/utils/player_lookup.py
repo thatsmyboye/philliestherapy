@@ -18,6 +18,8 @@ OHTANI_ID = 660271
 # Hard-coded overrides for players whose common/preferred names differ from their
 # legal names or who are otherwise difficult to resolve via fuzzy search alone.
 # Maps normalized common name → (mlbam_id, display_name)
+_player_cache: dict[str, tuple[int, str]] = {}
+
 _PLAYER_OVERRIDES: dict[str, tuple[int, str]] = {
     "zack wheeler": (554430, "Zack Wheeler"),
     "zachary wheeler": (554430, "Zack Wheeler"),
@@ -54,6 +56,10 @@ def resolve_player(
     norm = _normalize(name)
     if norm in _PLAYER_OVERRIDES:
         mlbam_id, display_name = _PLAYER_OVERRIDES[norm]
+        return mlbam_id, display_name, None
+
+    if norm in _player_cache:
+        mlbam_id, display_name = _player_cache[norm]
         return mlbam_id, display_name, None
 
     parts = name.split()
@@ -122,6 +128,7 @@ def resolve_player(
     first = top.get("useName") or top.get("firstName", "")
     last = top.get("useLastName") or top.get("lastName", "")
     full_name = f"{first.title()} {last.title()}".strip()
+    _player_cache[norm] = (mlbam_id, full_name)
     return mlbam_id, full_name, None
 
 
