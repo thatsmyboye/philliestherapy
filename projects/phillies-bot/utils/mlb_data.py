@@ -38,10 +38,17 @@ PITCH_LABEL_TO_CODE: dict[str, str] = {v: k for k, v in PITCH_TYPE_LABELS.items(
 # Phillies MLBAM team ID
 PHILLIES_TEAM_ID = 143
 
-# Season configuration
+# Season configuration — kept as module-level constants for external imports,
+# but URL construction and date helpers always use date.today().year at call
+# time so the bot remains correct across year boundaries without a restart.
 CURRENT_SEASON = datetime.now().year
 SPRING_TRAINING_START = f"{CURRENT_SEASON}-03-01"
 REGULAR_SEASON_START = f"{CURRENT_SEASON}-03-25"
+
+
+def _current_year() -> int:
+    """Return the current calendar year at call time (never stale)."""
+    return date.today().year
 
 
 def is_spring_training() -> bool:
@@ -51,7 +58,10 @@ def is_spring_training() -> bool:
 
 def get_season_start() -> str:
     """Return the appropriate Statcast query start date based on today's date."""
-    return SPRING_TRAINING_START if is_spring_training() else REGULAR_SEASON_START
+    year = _current_year()
+    if is_spring_training():
+        return f"{year}-03-01"
+    return f"{year}-03-25"
 
 
 def get_game_type() -> str:
@@ -137,21 +147,23 @@ def _fetch_statcast_csv(url: str) -> list[dict]:
 
 
 def _statcast_pitcher_url(mlbam_id: int, start: str, end: str, game_type: str) -> str:
+    season = _current_year()
     return (
         f"{_SAVANT_BASE}?player_type=pitcher"
         f"&pitchers_lookup%5B%5D={mlbam_id}"
         f"&game_date_gt={start}&game_date_lt={end}"
-        f"&hfGT={game_type}%7C&hfSea={CURRENT_SEASON}%7C"
+        f"&hfGT={game_type}%7C&hfSea={season}%7C"
         f"&type=details&all=true"
     )
 
 
 def _statcast_batter_url(mlbam_id: int, start: str, end: str, game_type: str) -> str:
+    season = _current_year()
     return (
         f"{_SAVANT_BASE}?player_type=batter"
         f"&batters_lookup%5B%5D={mlbam_id}"
         f"&game_date_gt={start}&game_date_lt={end}"
-        f"&hfGT={game_type}%7C&hfSea={CURRENT_SEASON}%7C"
+        f"&hfGT={game_type}%7C&hfSea={season}%7C"
         f"&type=details&all=true"
     )
 
@@ -159,11 +171,12 @@ def _statcast_batter_url(mlbam_id: int, start: str, end: str, game_type: str) ->
 def _statcast_team_url(
     team: str, player_type: str, start: str, end: str, game_type: str
 ) -> str:
+    season = _current_year()
     return (
         f"{_SAVANT_BASE}?player_type={player_type}"
         f"&team={team}"
         f"&game_date_gt={start}&game_date_lt={end}"
-        f"&hfGT={game_type}%7C&hfSea={CURRENT_SEASON}%7C"
+        f"&hfGT={game_type}%7C&hfSea={season}%7C"
         f"&type=details&all=true"
     )
 
@@ -308,7 +321,7 @@ def _pitcher_luck_score(rows: list[dict]) -> float:
 
 def _get_phillies_batter_statcast() -> list[dict]:
     """Fetch all Phillies batter Statcast events this season (4-hour cache)."""
-    key = f"team_batter_statcast_PHI_{CURRENT_SEASON}"
+    key = f"team_batter_statcast_PHI_{_current_year()}"
     cached = _cache_get(key, 4 * 3600)
     if cached is not None:
         return cached
@@ -322,12 +335,25 @@ def _get_phillies_batter_statcast() -> list[dict]:
 
 def _get_phillies_pitcher_statcast() -> list[dict]:
     """Fetch all Phillies pitcher Statcast events this season (4-hour cache)."""
-    key = f"team_pitcher_statcast_PHI_{CURRENT_SEASON}"
+    return get_team_pitcher_statcast("PHI")
+
+
+def get_team_pitcher_statcast(team_abbr: str) -> list[dict]:
+    """
+    Fetch all pitcher Statcast events for any team this season (4-hour cache).
+
+    Uses the team-level Baseball Savant URL (proven reliable) rather than the
+    individual-player pitchers_lookup[] endpoint, which can fail silently.
+
+    team_abbr: Baseball Savant team abbreviation, e.g. "PHI", "COL", "NYM".
+    """
+    year = _current_year()
+    key = f"team_pitcher_statcast_{team_abbr}_{year}"
     cached = _cache_get(key, 4 * 3600)
     if cached is not None:
         return cached
     today = date.today().strftime("%Y-%m-%d")
-    url = _statcast_team_url("PHI", "pitcher", get_season_start(), today, get_game_type())
+    url = _statcast_team_url(team_abbr, "pitcher", get_season_start(), today, get_game_type())
     rows = _fetch_statcast_csv(url)
     result = [r for r in rows if r.get("game_type") == get_game_type()]
     _cache_set(key, result)

@@ -22,13 +22,13 @@ from cogs.trends import _compute_pitcher_metrics, _safe_mean, _SWINGING_DESCS
 from utils.mlb_data import (
     PITCH_TYPE_LABELS,
     _get_phillies_batter_statcast,
+    _get_phillies_pitcher_statcast,
     _to_float,
     _to_int,
-    fetch_statcast_for_range,
     get_next_game_with_probables,
     get_opponent_roster_batters,
     get_phillies_roster_full,
-    get_pitcher_statcast,
+    get_team_pitcher_statcast,
     is_early_regular_season,
     is_spring_training,
 )
@@ -174,8 +174,11 @@ def _arsenal_text(season_rows: list[dict], recent_rows: list[dict]) -> str:
     cq = _contact_quality(season_rows)
 
     by_type = season_m.get("by_type", {})
+    total_pitches = season_m.get("total_pitches", 0)
     if not by_type:
-        return "_No Statcast data available for this pitcher yet._"
+        if total_pitches == 0:
+            return "_No Statcast data available for this pitcher yet._"
+        return f"_Statcast data loading ({total_pitches} pitches tracked, < 10 per pitch type)._"
 
     # Sort by usage descending, keep top 5
     sorted_types = sorted(
@@ -185,7 +188,8 @@ def _arsenal_text(season_rows: list[dict], recent_rows: list[dict]) -> str:
     )[:5]
 
     if not sorted_types:
-        return "_Insufficient Statcast data (< 30 pitches per type)._"
+        n_best = max((m.get("n", 0) for m in by_type.values()), default=0)
+        return f"_Statcast sample still building ({total_pitches} pitches, {n_best} max per type — need 30)._"
 
     recent_by_type = recent_m.get("by_type", {}) if recent_m else {}
     lines = []
@@ -432,31 +436,30 @@ class MatchupCog(commands.Cog, name="Matchup"):
             return
 
         # ── Step 2: Fetch Statcast data concurrently ──────────────────────────
-        today_str = date.today().isoformat()
         window_start = (date.today() - timedelta(days=_RECENT_DAYS)).isoformat()
 
-        async def _fetch_pitcher(pid: int):
-            season = await asyncio.to_thread(get_pitcher_statcast, pid)
-            recent = await asyncio.to_thread(
-                fetch_statcast_for_range, pid, "pitcher", window_start, today_str
-            )
+        # Use team-level Baseball Savant URLs (proven reliable) then filter by
+        # pitcher ID in Python.  The individual pitchers_lookup[] endpoint can
+        # silently return empty data, especially early in a new season.
+        phi_team_task = asyncio.to_thread(_get_phillies_pitcher_statcast)
+        opp_team_task = (
+            asyncio.to_thread(get_team_pitcher_statcast, opp["abbreviation"])
+            if opp_prob else asyncio.sleep(0, result=[])
+        )
+
+        phi_team_rows, opp_team_rows = await asyncio.gather(phi_team_task, opp_team_task)
+
+        def _filter_pitcher(team_rows: list[dict], pid: int):
+            season = [r for r in team_rows if _to_int(r.get("pitcher", 0)) == pid]
+            recent = [r for r in season if r.get("game_date", "") >= window_start]
             return season, recent
 
-        tasks = []
-        if phi_prob:
-            tasks.append(_fetch_pitcher(phi_prob["id"]))
-        if opp_prob:
-            tasks.append(_fetch_pitcher(opp_prob["id"]))
-
-        results = await asyncio.gather(*tasks)
-
-        phi_season, phi_recent = results[0] if phi_prob else ([], [])
-        if phi_prob and opp_prob:
-            opp_season, opp_recent = results[1]
-        elif opp_prob and not phi_prob:
-            opp_season, opp_recent = results[0]
-        else:
-            opp_season, opp_recent = [], []
+        phi_season, phi_recent = (
+            _filter_pitcher(phi_team_rows, phi_prob["id"]) if phi_prob else ([], [])
+        )
+        opp_season, opp_recent = (
+            _filter_pitcher(opp_team_rows, opp_prob["id"]) if opp_prob else ([], [])
+        )
 
         phi_bat_rows = await asyncio.to_thread(_get_phillies_batter_statcast)
 
