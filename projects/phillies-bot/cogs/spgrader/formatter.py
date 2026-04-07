@@ -181,14 +181,14 @@ def build_leaderboard_embed(lb: Leaderboard, page: str = "averages") -> discord.
             embed.description = "_No games recorded yet._"
         else:
             NAME_W = 18
-            header = f"{'#':>3}  {'Name':<{NAME_W}}  {'Date':<10}  {'PAR':>5}  {'IP':>4}  {'K':>3}  {'BB':>3}  {'ER':>3}"
+            header = f"{'#':>3}  {'Name':<{NAME_W}}  {'Date':<10}  {'PAR':>5}"
             sep = "─" * len(header)
             rows = [header, sep]
             for i, rec in enumerate(top):
                 name = rec.pitcher_name[:NAME_W]
                 rows.append(
                     f"{i+1:>3}  {name:<{NAME_W}}  {rec.game_date:<10}  "
-                    f"{rec.score:>5.1f}  {rec.ip:>4}  {rec.k:>3}  {rec.bb:>3}  {rec.er:>3}"
+                    f"{rec.score:>5.1f}"
                 )
             embed.description = "```\n" + "\n".join(rows) + "\n```"
 
