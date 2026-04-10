@@ -136,6 +136,11 @@ def _compute_pitcher_metrics(rows: list[dict]) -> dict:
         if pt:
             by_type[pt].append(row)
 
+    # Count only rows that carry a pitch-type label.  Savant can return
+    # unclassified rows early in the season while pitch classification is still
+    # being processed, inflating total_pitches without contributing usable data.
+    typed_total = sum(1 for r in rows if r.get("pitch_type", "").strip())
+
     by_type_metrics: dict[str, dict] = {}
     for pt, pt_rows in by_type.items():
         n = len(pt_rows)
@@ -154,9 +159,10 @@ def _compute_pitcher_metrics(rows: list[dict]) -> dict:
         swings = sum(1 for r in pt_rows
                      if r.get("description", "").strip() in _SWINGING_DESCS)
 
+        denom = typed_total if typed_total > 0 else total
         pm: dict = {
             "n": n,
-            "usage_pct": n / total * 100,
+            "usage_pct": n / denom * 100,
             "whiff_rate": swings / n * 100,
         }
         if velos:
@@ -170,7 +176,7 @@ def _compute_pitcher_metrics(rows: list[dict]) -> dict:
 
         by_type_metrics[pt] = pm
 
-    return {"total_pitches": total, "by_type": by_type_metrics}
+    return {"total_pitches": total, "typed_pitches": typed_total, "by_type": by_type_metrics}
 
 
 # ─── Trend detection ──────────────────────────────────────────────────────────

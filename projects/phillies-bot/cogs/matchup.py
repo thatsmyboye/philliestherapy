@@ -28,6 +28,7 @@ from utils.mlb_data import (
     get_next_game_with_probables,
     get_opponent_roster_batters,
     get_phillies_roster_full,
+    get_pitcher_statcast_multiyear,
     get_team_pitcher_statcast,
     is_early_regular_season,
     is_spring_training,
@@ -44,10 +45,24 @@ def _season_mode_note() -> str:
     if is_early_regular_season():
         return "🔶 Early regular season — Statcast samples still building"
     return ""
-_MIN_SEASON_PITCHES = 30   # min pitches per type to show in arsenal
-_MIN_RECENT_PITCHES = 15   # min pitches per type for delta indicators
-_MIN_HITTER_PITCHES = 8    # min pitches seen by a hitter for spotlight
-_MIN_PHI_PA = 10           # min PHI PA vs opp SP for direct history
+
+
+_MIN_RECENT_PITCHES = 15   # min pitches per type for delta indicators (fixed)
+
+
+def _min_season_pitches() -> int:
+    """Min per-type pitches to display in the arsenal. Lowered early season."""
+    return 15 if is_early_regular_season() else 30
+
+
+def _min_hitter_pitches() -> int:
+    """Min pitches a hitter must have seen for a spotlight entry. Lowered early season."""
+    return 4 if is_early_regular_season() else 8
+
+
+def _min_phi_pa() -> int:
+    """Min PHI PA vs opp SP for direct history. Lowered early season."""
+    return 5 if is_early_regular_season() else 10
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +114,7 @@ def _hitter_vs_pitcher(
 
     result: dict[int, dict] = {}
     for bid, rows in by_batter.items():
-        if len(rows) < _MIN_HITTER_PITCHES:
+        if len(rows) < _min_hitter_pitches():
             continue
         by_type: dict[str, list[dict]] = defaultdict(list)
         for row in rows:
@@ -170,26 +185,42 @@ def _arsenal_text(season_rows: list[dict], recent_rows: list[dict]) -> str:
     Returns a string suitable for a Discord embed field value.
     """
     season_m = _compute_pitcher_metrics(season_rows)
-    recent_m = _compute_pitcher_metrics(recent_rows) if recent_rows else {}
+    # Suppress recent-form deltas during the first month: the 30-day window
+    # overlaps almost entirely with the season, so deltas carry no signal.
+    show_deltas = not is_early_regular_season()
+    recent_m = _compute_pitcher_metrics(recent_rows) if (recent_rows and show_deltas) else {}
     cq = _contact_quality(season_rows)
 
     by_type = season_m.get("by_type", {})
     total_pitches = season_m.get("total_pitches", 0)
+    typed_pitches = season_m.get("typed_pitches", 0)
     if not by_type:
-        if total_pitches == 0:
-            return "_No Statcast data available for this pitcher yet._"
-        return f"_Statcast data loading ({total_pitches} pitches tracked, < 10 per pitch type)._"
+        if typed_pitches == 0:
+            if total_pitches == 0:
+                return "_No Statcast data available for this pitcher yet._"
+            return (
+                f"_No pitch-type data yet ({total_pitches} raw events logged"
+                f" — classification still pending)._"
+            )
+        return (
+            f"_Statcast data loading ({typed_pitches} classified pitches,"
+            f" < 10 per type)._"
+        )
 
+    min_sp = _min_season_pitches()
     # Sort by usage descending, keep top 5
     sorted_types = sorted(
-        [(pt, m) for pt, m in by_type.items() if m.get("n", 0) >= _MIN_SEASON_PITCHES],
+        [(pt, m) for pt, m in by_type.items() if m.get("n", 0) >= min_sp],
         key=lambda x: x[1].get("usage_pct", 0),
         reverse=True,
     )[:5]
 
     if not sorted_types:
         n_best = max((m.get("n", 0) for m in by_type.values()), default=0)
-        return f"_Statcast sample still building ({total_pitches} pitches, {n_best} max per type — need 30)._"
+        return (
+            f"_Statcast sample still building ({typed_pitches} classified pitches,"
+            f" {n_best} max per type — need {min_sp})._"
+        )
 
     recent_by_type = recent_m.get("by_type", {}) if recent_m else {}
     lines = []
@@ -347,27 +378,39 @@ def _phi_vs_sp_text(phi_bat_rows: list[dict], opp_sp_id: int, phi_roster: list[d
     """
     PHI hitter performance specifically against the opponent SP.
     Filters season PHI batter rows by pitcher == opp_sp_id.
-    Falls back gracefully if insufficient history.
+    When current-season history is sparse (common early in the year), falls back
+    to multi-year career data fetched via get_pitcher_statcast_multiyear().
     """
+    phi_roster_map = {p["id"]: p for p in phi_roster}
+    phi_ids = set(phi_roster_map.keys())
+
     sp_rows = [
         r for r in phi_bat_rows
         if _to_int(r.get("pitcher", 0)) == opp_sp_id
     ]
 
-    if len(sp_rows) < _MIN_PHI_PA:
-        note = (
-            f"_Limited prior history (n={len(sp_rows)} PA) — showing PHI team tendencies._\n"
-            if sp_rows else
-            "_No prior history vs this pitcher this season._\n"
-        )
-        if not sp_rows:
-            return note.strip()
-        # Fall through with what we have and note the caveat
-    else:
-        note = ""
+    min_pa = _min_phi_pa()
+    note = ""
 
-    phi_roster_map = {p["id"]: p for p in phi_roster}
-    phi_ids = set(phi_roster_map.keys())
+    if len(sp_rows) < min_pa:
+        # Attempt multi-year career fallback before giving up
+        multiyear = get_pitcher_statcast_multiyear(opp_sp_id)
+        career_rows = [
+            r for r in multiyear
+            if _to_int(r.get("batter", 0)) in phi_ids
+        ]
+        if len(career_rows) >= min_pa:
+            sp_rows = career_rows
+            note = f"_Career history (last 2 seasons) — no {date.today().year} matchup data yet._\n"
+        elif career_rows:
+            sp_rows = career_rows
+            note = (
+                f"_Limited career history (n={len(career_rows)} PA) —"
+                f" cross-divisional sample still building._\n"
+            )
+        else:
+            return "_No prior history vs this pitcher (career or this season)._"
+
     spotlight = _hitter_spotlight_text(
         # Treat the filtered SP rows as the "pitcher_rows" — they already contain
         # only pitches from opp_sp_id, so we can analyze by batter
@@ -487,10 +530,25 @@ class MatchupCog(commands.Cog, name="Matchup"):
             )
 
             # ── Step 5: PHI SP hitter spotlights (opponent hitters) ───────────
-            if opp_roster and phi_season:
-                phi_sp_spotlights = await asyncio.to_thread(
-                    _hitter_spotlight_text, phi_season, opp_roster, "pitcher"
-                )
+            # If current-season rows are sparse, supplement with career data.
+            _SPARSE_ROWS = 50
+            if opp_roster:
+                spotlight_rows = phi_season
+                spotlight_note = ""
+                if len(phi_season) < _SPARSE_ROWS and phi_prob:
+                    phi_multi = await asyncio.to_thread(
+                        get_pitcher_statcast_multiyear, phi_prob["id"]
+                    )
+                    if len(phi_multi) > len(phi_season):
+                        spotlight_rows = phi_multi
+                        spotlight_note = "_Career history (last 2 seasons)._\n"
+                if spotlight_rows:
+                    raw = await asyncio.to_thread(
+                        _hitter_spotlight_text, spotlight_rows, opp_roster, "pitcher"
+                    )
+                    phi_sp_spotlights = spotlight_note + raw
+                else:
+                    phi_sp_spotlights = "_No data available for hitter spotlights._"
             else:
                 phi_sp_spotlights = "_Opponent roster data unavailable._"
             embed.add_field(
