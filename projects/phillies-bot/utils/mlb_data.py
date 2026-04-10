@@ -69,10 +69,11 @@ def get_game_type() -> str:
     return "S" if is_spring_training() else "R"
 
 
-def is_early_regular_season(days: int = 21) -> bool:
+def is_early_regular_season(days: int = 28) -> bool:
     """
     Return True if today is within `days` days after the regular season start.
-    Useful for surfacing a low-sample-size caveat early in the year.
+    The default window is 28 days (first full month) — cross-divisional matchup
+    history and per-pitch-type samples are too sparse before that threshold.
     """
     from datetime import timedelta
     reg_start = date(date.today().year, 3, 25)
@@ -358,6 +359,49 @@ def get_team_pitcher_statcast(team_abbr: str) -> list[dict]:
     result = [r for r in rows if r.get("game_type") == get_game_type()]
     _cache_set(key, result)
     return result
+
+
+def get_pitcher_statcast_multiyear(mlbam_id: int, prior_years: int = 2) -> list[dict]:
+    """
+    Return Statcast rows for a pitcher spanning the current season plus the
+    previous `prior_years` regular seasons.  Used as a fallback when current-
+    season cross-divisional matchup history is too sparse (early in the year).
+
+    Rows from prior seasons carry a synthetic ``_season`` key so callers can
+    label them accordingly.  Current-season rows reuse the standard
+    ``get_pitcher_statcast()`` cache where possible.
+
+    Results are cached for 6 hours under a per-pitcher, per-year key.
+    """
+    current = _current_year()
+    key = f"pitcher_multiyear_{mlbam_id}_{current}"
+    cached = _cache_get(key, 6 * 3600)
+    if cached is not None:
+        return cached
+
+    all_rows: list[dict] = []
+
+    # Fetch each prior regular season independently
+    for yr in range(current - prior_years, current):
+        url = _statcast_pitcher_url(
+            mlbam_id,
+            f"{yr}-03-20",
+            f"{yr}-11-05",
+            "R",
+        )
+        rows = _fetch_statcast_csv(url)
+        for r in rows:
+            r["_season"] = yr
+        all_rows.extend(r for r in rows if r.get("game_type") == "R")
+
+    # Current season — piggyback on the standard cache to avoid double-fetching
+    current_rows = get_pitcher_statcast(mlbam_id)
+    for r in current_rows:
+        r.setdefault("_season", current)
+    all_rows.extend(current_rows)
+
+    _cache_set(key, all_rows)
+    return all_rows
 
 
 def get_phillies_luck(lucky: bool) -> dict[str, list[dict]]:
