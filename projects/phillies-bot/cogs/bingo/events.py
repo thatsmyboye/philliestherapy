@@ -158,47 +158,23 @@ def assign_players_to_pool(
     roster: list[dict],
 ) -> list[dict]:
     """
-    Build the full list of 24 square dicts, each with player assignment.
+    Build the full list of 24 square dicts for the Phillies bingo variant.
 
     Each square is:
       {event_id, player_id, player_name, label, category}
 
-    GAME events always get player_id=None ("Any").
-    BATTER/PITCHER events get a 50/50 random flip: specific Phillies player
-    or "Any".  If no compatible roster player is available, falls back to Any.
-
-    roster entries: {id, fullName, is_pitcher, ...}
+    All squares use player_id=None ("Any") so that events fire for any player
+    in the game — either Phillies or the day's opponent.  The roster parameter
+    is accepted for API compatibility but is no longer used.
     """
-    position_players = [p for p in roster if not p.get("is_pitcher")]
-    pitchers = [p for p in roster if p.get("is_pitcher")]
-
     squares: list[dict] = []
-    for idx, event_id in enumerate(event_ids):
-        category = EVENT_CATEGORY[event_id]
-        rng = random.Random(f"{game_date}:{event_id}:{idx}")
-
-        if category == GAME:
-            player_id = None
-            player_name = "Any"
-        else:
-            pool = position_players if category == BATTER else pitchers
-            if pool and rng.random() >= 0.5:
-                player = rng.choice(pool)
-                # Use last name for display
-                full = player["fullName"]
-                last = full.split()[-1]
-                player_id = player["id"]
-                player_name = last
-            else:
-                player_id = None
-                player_name = "Any"
-
+    for event_id in event_ids:
         squares.append({
             "event_id": event_id,
-            "player_id": player_id,
-            "player_name": player_name,
-            "label": make_label(event_id, player_name),
-            "category": category,
+            "player_id": None,
+            "player_name": "Any",
+            "label": make_label(event_id, "Any"),
+            "category": EVENT_CATEGORY[event_id],
         })
 
     return squares
@@ -401,6 +377,10 @@ def detect_events(
     Inspect a single completed play and return a list of square fingerprints
     that are newly triggered by this play.
 
+    Events fire for any player in the game — either Phillies or the opponent.
+    Since this function is only called for Phillies game feeds, all plays are
+    from the day's Phillies matchup.
+
     Does NOT handle linescore-level events (LEAD_CHANGE, EXTRA_INN,
     PHI_COMEBACK) — those are checked separately in the monitor loop.
     """
@@ -416,9 +396,6 @@ def detect_events(
     batter_id: Optional[int] = matchup.get("batter", {}).get("id")
     pitcher_id: Optional[int] = matchup.get("pitcher", {}).get("id")
 
-    batting_team = _get_batting_team_id(play, feed)
-    pitching_team = _get_pitching_team_id(play, feed)
-
     triggered: list[str] = []
 
     for square in pool_squares:
@@ -427,21 +404,21 @@ def detect_events(
             continue
 
         cat = square["category"]
-        pid = square["player_id"]  # None == "Any Phillies player"
+        pid = square["player_id"]  # None == "Any player in the game"
         eid = square["event_id"]
 
         matched = False
 
-        if cat == BATTER and batting_team == PHILLIES_TEAM_ID:
+        if cat == BATTER:
             if pid is None or batter_id == pid:
                 matched = _matches_batter_event(eid, event_type, desc, rbi)
 
-        elif cat == PITCHER and pitching_team == PHILLIES_TEAM_ID:
+        elif cat == PITCHER:
             if pid is None or pitcher_id == pid:
                 matched = _matches_pitcher_event(eid, event_type, desc)
 
         elif cat == GAME:
-            matched = _matches_game_event(eid, event_type, pitching_team)
+            matched = _matches_game_event_any(eid, event_type)
 
         if matched:
             triggered.append(fingerprint)

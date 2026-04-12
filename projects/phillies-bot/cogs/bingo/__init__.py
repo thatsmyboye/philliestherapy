@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -45,15 +45,14 @@ from .events import (
     detect_linescore_events_league,
     draw_daily_pool,
     draw_daily_pool_league,
-    get_phillies_lineup_ids,
     pick_win_type,
-    reroll_any_from_lineup,
     WIN_TYPE_LABELS,
 )
 from .formatter import (
     make_join_confirm_embed,
     make_key_embed,
     make_leaderboard_embed,
+    make_pre_game_reminder_embed,
     make_win_announcement_embed,
 )
 from .storage import BingoStore, ScoresStore
@@ -81,6 +80,10 @@ class BingoCog(commands.Cog, name="Bingo"):
         self._other_channel_id: int = int(os.environ.get("OTHER_BINGO_CHANNEL_ID", 0) or 0)
         self._league_store = BingoStore(LEAGUE_BINGO_PATH)
         self._league_scores = ScoresStore(LEAGUE_SCORES_PATH)
+
+        # Track dates for which the pre-game reminder has already been sent
+        self._phillies_reminder_sent: Optional[str] = None  # ISO date string
+        self._league_reminder_sent: Optional[str] = None
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -356,6 +359,13 @@ class BingoCog(commands.Cog, name="Bingo"):
         today = date.today().isoformat()
         await self._ensure_game_day(loop, games)
 
+        await self._check_and_send_reminder(
+            games,
+            self._channel_id,
+            "Phillies",
+            "_phillies_reminder_sent",
+        )
+
         if self._store.is_game_over():
             return
 
@@ -395,6 +405,13 @@ class BingoCog(commands.Cog, name="Bingo"):
         today = date.today().isoformat()
         await self._ensure_league_game_day(loop, games)
 
+        await self._check_and_send_reminder(
+            games,
+            self._other_channel_id,
+            "League",
+            "_league_reminder_sent",
+        )
+
         if self._league_store.is_game_over():
             return
 
@@ -418,6 +435,66 @@ class BingoCog(commands.Cog, name="Bingo"):
         if len(terminal_games) == len(games) and len(games) > 0:
             self._league_store.set_game_over()
             print(f"[bingo:league] All non-Phillies games finished for {today}. Bingo closed.")
+
+    # ── Internal: pre-game reminder ───────────────────────────────────────────
+
+    async def _check_and_send_reminder(
+        self,
+        games: list[dict],
+        channel_id: int,
+        variant_label: str,
+        sent_attr: str,
+    ) -> None:
+        """
+        Send a one-time reminder message ~1 hour before the first game starts.
+
+        Looks for the earliest game that hasn't yet started (not In Progress
+        or terminal), then posts an embed if we're within the 1-hour window
+        and haven't already sent today's reminder.
+        """
+        if not channel_id:
+            return
+
+        today = date.today().isoformat()
+        if getattr(self, sent_attr) == today:
+            return  # already sent today
+
+        _NOT_STARTED = _TERMINAL_STATUSES | {"In Progress", "Warmup", "Pre-Game"}
+        upcoming = [
+            g for g in games
+            if g.get("status") not in _NOT_STARTED and g.get("game_datetime")
+        ]
+        if not upcoming:
+            return
+
+        now_utc = datetime.now(timezone.utc)
+        try:
+            start_times = [
+                datetime.fromisoformat(g["game_datetime"].replace("Z", "+00:00"))
+                for g in upcoming
+            ]
+        except (ValueError, KeyError):
+            return
+
+        earliest = min(start_times)
+        time_until = earliest - now_utc
+
+        if timedelta(0) < time_until <= timedelta(hours=1):
+            channel = self.bot.get_channel(channel_id)
+            if channel is None:
+                try:
+                    channel = await self.bot.fetch_channel(channel_id)
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                    print(f"[bingo] Cannot find reminder channel {channel_id}: {exc}")
+                    return
+
+            embed = make_pre_game_reminder_embed(variant_label, earliest, upcoming)
+            try:
+                await channel.send(embed=embed)
+                setattr(self, sent_attr, today)
+                print(f"[bingo:{variant_label.lower()}] Pre-game reminder sent for {today}.")
+            except discord.HTTPException as exc:
+                print(f"[bingo] Failed to send pre-game reminder: {exc}")
 
     # ── Internal: ensure Phillies game day is initialised ─────────────────────
 
@@ -485,30 +562,6 @@ class BingoCog(commands.Cog, name="Bingo"):
         feed: dict,
         today: str,
     ) -> None:
-        # Lineup re-roll (once per day): populate "Any" cells with confirmed lineup players
-        if not self._store.lineups_checked:
-            lineup_ids = get_phillies_lineup_ids(feed)
-            if lineup_ids:
-                game_players = feed.get("gameData", {}).get("players", {})
-                lineup_roster = [
-                    {
-                        "id": pdata["id"],
-                        "fullName": pdata.get("fullName", ""),
-                        "is_pitcher": pdata.get("primaryPosition", {}).get("abbreviation", "") == "P",
-                    }
-                    for pdata in game_players.values()
-                    if pdata.get("id") in lineup_ids
-                ]
-                updated_pool = reroll_any_from_lineup(
-                    self._store.event_pool,
-                    lineup_roster,
-                    today,
-                )
-                self._store.event_pool = updated_pool
-                self._store.lineups_checked = True
-                self._store.save()
-                print(f"[bingo] Lineup re-roll complete for {today}.")
-
         pool = self._store.event_pool
         marked = self._store.get_marked_set()
 
@@ -626,28 +679,38 @@ class BingoCog(commands.Cog, name="Bingo"):
         print(f"[bingo] {user_id} got BINGO! Place {place}, +{points} pts.")
 
         channel = self.bot.get_channel(announce_channel_id)
-        if channel:
-            display_name = f"<@{user_id}>"
-            resolved_guild = guild or (
-                channel.guild if hasattr(channel, "guild") else None
-            )
-            if resolved_guild:
-                member = resolved_guild.get_member(int(user_id))
-                if member:
-                    display_name = member.display_name
-
-            embed = make_win_announcement_embed(
-                display_name=display_name,
-                place=place,
-                points=points,
-                win_type=store.win_type,
-                game_date=today,
-                variant_label=variant_label,
-            )
+        if channel is None:
             try:
-                await channel.send(embed=embed)
-            except discord.HTTPException as exc:
-                print(f"[bingo] Failed to post win announcement: {exc}")
+                channel = await self.bot.fetch_channel(announce_channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                print(f"[bingo] Cannot find announcement channel {announce_channel_id}: {exc}")
+                return
+        if channel is None:
+            print(f"[bingo] Announcement channel {announce_channel_id} not found, skipping win post.")
+            return
+
+        display_name = f"<@{user_id}>"
+        resolved_guild = guild or (
+            channel.guild if hasattr(channel, "guild") else None
+        )
+        if resolved_guild:
+            member = resolved_guild.get_member(int(user_id))
+            if member:
+                display_name = member.display_name
+
+        embed = make_win_announcement_embed(
+            display_name=display_name,
+            place=place,
+            points=points,
+            win_type=store.win_type,
+            game_date=today,
+            variant_label=variant_label,
+        )
+        try:
+            await channel.send(embed=embed)
+            print(f"[bingo] Win announcement posted for {user_id} in channel {announce_channel_id}.")
+        except discord.HTTPException as exc:
+            print(f"[bingo] Failed to post win announcement: {exc}")
 
 
 async def setup(bot: commands.Bot) -> None:
