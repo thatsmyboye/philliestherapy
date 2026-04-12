@@ -3,6 +3,7 @@ Embed builders for the Bingo game.
 
   make_join_confirm_embed  — ephemeral board preview shown on /bingo join
   make_win_announcement_embed — public post to bingo channel on a win
+  make_pre_game_reminder_embed — public post ~1 hour before first pitch
   make_leaderboard_embed   — public top-5 season scores
 
 All functions accept an optional `variant_label` (e.g. "Phillies", "League")
@@ -10,6 +11,7 @@ that is used in embed titles and footers to distinguish game variants.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Optional
 
 import discord
@@ -68,6 +70,49 @@ def make_join_confirm_embed(
     embed.add_field(name="Today's Squares (2/2)", value=col2, inline=True)
 
     embed.set_footer(text="Good luck! 🍀  Points awarded to the first 10 players to get Bingo.")
+    return embed
+
+
+# ---------------------------------------------------------------------------
+# Pre-game reminder
+# ---------------------------------------------------------------------------
+
+def make_pre_game_reminder_embed(
+    variant_label: str,
+    game_start: datetime,
+    games: list[dict],
+) -> discord.Embed:
+    """
+    Public embed posted to the bingo channel ~1 hour before the first pitch.
+    Prompts users to join with /bingo join before the game starts.
+
+    game_start: UTC datetime of the earliest upcoming game.
+    games:      full list of today's games (used to show matchup info).
+    """
+    now = datetime.now(timezone.utc)
+    minutes_until = int((game_start - now).total_seconds() / 60)
+
+    if minutes_until >= 60:
+        time_str = f"~{minutes_until // 60}h {minutes_until % 60}m"
+    else:
+        time_str = f"~{minutes_until}m"
+
+    # Build matchup line(s) from the games list
+    matchup_lines: list[str] = []
+    for g in games:
+        away = g.get("away_name", "Away")
+        home = g.get("home_name", "Home")
+        matchup_lines.append(f"**{away}** @ **{home}**")
+    matchup_text = "\n".join(matchup_lines) if matchup_lines else ""
+
+    embed = discord.Embed(
+        title=f"⚾ First pitch in {time_str} — join {variant_label} Bingo!",
+        description=(
+            f"{matchup_text}\n\n" if matchup_text else ""
+        ) + "Use `/bingo join` to get your board before the game starts!",
+        colour=discord.Colour.red(),
+    )
+    embed.set_footer(text=f"{variant_label} Bingo · boards lock in once the first play is recorded")
     return embed
 
 
