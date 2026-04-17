@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Sequence Baseball — MLB Analytics{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Sequence Baseball</h1>
+  <p class="page-subtitle">Statcast-powered MLB analytics — PAR grading, pitch sequencing, trends, steals, and more.</p>
+</div>
+
+<!-- Today's live games ticker -->
+<div id="live-games" class="games-row">
+  {% if games %}
+    {% for g in games %}
+    <div class="game-chip">
+      <span class="teams">{{ g.away_name }} @ {{ g.home_name }}</span>
+      {% if g.status == 'In Progress' %}
+        <span class="score">{{ g.away_score }}–{{ g.home_score }}</span>
+        <br><span class="status">{{ g.inning_state }} {{ g.current_inning }}</span>
+      {% else %}
+        <br><span class="status">{{ g.status }}</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% else %}
+    <span class="muted">No games scheduled today.</span>
+  {% endif %}
+</div>
+
+<!-- Quick-nav cards -->
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
+
+  <a href="/par/" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;">
+      <div class="card-title">PAR Leaders</div>
+      <p style="margin:0;font-size:0.82rem;color:var(--text-muted);">Pitcher Ace Rating — proprietary 0–100 game-by-game grading model for starting pitchers.</p>
+    </div>
+  </a>
+
+  <a href="/sequence/" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;">
+      <div class="card-title">Sequence</div>
+      <p style="margin:0;font-size:0.82rem;color:var(--text-muted);">Top two-pitch sequences ranked by whiff rate, chase rate, and weak contact.</p>
+    </div>
+  </a>
+
+  <a href="/trends/" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;">
+      <div class="card-title">Trends</div>
+      <p style="margin:0;font-size:0.82rem;color:var(--text-muted);">7/14/30-day Statcast trend detection for any hitter or pitcher.</p>
+    </div>
+  </a>
+
+  <a href="/getaway/" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;">
+      <div class="card-title">Getaway</div>
+      <p style="margin:0;font-size:0.82rem;color:var(--text-muted);">How well does a pitcher escape the consequences of truly bad pitches?</p>
+    </div>
+  </a>
+
+  <a href="/matchup/" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;">
+      <div class="card-title">Matchup</div>
+      <p style="margin:0;font-size:0.82rem;color:var(--text-muted);">Next game preview: probable pitcher arsenals and hitter spotlights.</p>
+    </div>
+  </a>
+
+  <a href="/steal/" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;">
+      <div class="card-title">Steal Grades</div>
+      <p style="margin:0;font-size:0.82rem;color:var(--text-muted);">Difficulty-weighted stolen base grades and season leaderboard.</p>
+    </div>
+  </a>
+
+  <a href="/luck/" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;">
+      <div class="card-title">Luck / Unluck</div>
+      <p style="margin:0;font-size:0.82rem;color:var(--text-muted);">xBA-based luck scoring — who's been helped or hurt by batted ball outcomes.</p>
+    </div>
+  </a>
+
+</div>
+{% endblock %}

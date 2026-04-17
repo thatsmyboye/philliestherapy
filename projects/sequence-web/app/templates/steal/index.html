@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Steal Grades — Sequence Baseball{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Steal Grade Leaderboard</h1>
+  <p class="page-subtitle">Runners ranked by difficulty-weighted success rate (WSR). Difficulty: pitch speed + type, catcher pop time, runner sprint speed. Min 2 attempts.</p>
+</div>
+
+{% if error %}
+<div class="card" style="border-color:var(--yellow);">
+  <p style="color:var(--yellow);margin:0;">{{ error }}</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <div class="card-title" style="margin:0;">Season Leaderboard</div>
+    <a class="btn btn-secondary" href="/steal/live" style="font-size:0.78rem;padding:4px 12px;text-decoration:none;">Live Feed →</a>
+  </div>
+  {% if rows %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="right">#</th>
+        <th>Runner</th>
+        <th class="right">SB</th>
+        <th class="right">CS</th>
+        <th class="right">Attempts</th>
+        <th class="right">WSR</th>
+        <th class="right">Avg Diff</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="rank-cell right">{{ loop.index }}</td>
+        <td>{{ r.name }}</td>
+        <td class="right">{{ r.sb }}</td>
+        <td class="right">{{ r.cs }}</td>
+        <td class="right muted">{{ r.attempts }}</td>
+        <td class="right"><strong>{{ r.wsr }}%</strong></td>
+        <td class="right muted">{{ r.avg_diff }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin:0;">No steal data recorded yet. Data is tracked live during Phillies games.</p>
+  {% endif %}
+</div>
+
+<p style="font-size:0.78rem;color:var(--text-muted);">
+  WSR = Σ(difficulty × success) / Σ(difficulty) × 100 &nbsp;·&nbsp; Difficulty scale: 0.5–5.0 stars
+</p>
+{% endblock %}

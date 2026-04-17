@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Live PAR Grades — Sequence Baseball{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Live PAR Grades</h1>
+  <p class="page-subtitle">Real-time pitcher grades streamed as starters exit games. Updates automatically during games.</p>
+</div>
+
+<div class="card">
+  <div class="card-title">
+    Live Feed
+    <span class="htmx-indicator spinner" style="margin-left:8px;"></span>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Pitcher</th>
+        <th class="right">IP</th>
+        <th class="right">PAR</th>
+        <th class="center">Grade</th>
+      </tr>
+    </thead>
+    <tbody id="live-par-feed">
+      <tr>
+        <td colspan="5" class="muted" style="text-align:center;padding:24px;">
+          Waiting for live game events…
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<p style="font-size:0.78rem;color:var(--text-muted);">
+  Grades post when the starting pitcher exits the game. The page updates automatically — no refresh needed.
+</p>
+{% endblock %}

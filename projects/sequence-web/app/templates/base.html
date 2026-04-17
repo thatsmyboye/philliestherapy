@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Sequence Baseball{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/main.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  <script src="/static/js/live.js" defer></script>
+</head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar navigation -->
+  <nav class="sidebar">
+    <a class="site-title" href="/">Sequence⚾</a>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Leaderboards</div>
+      <a class="nav-link {% if active_nav == 'par' %}active{% endif %}" href="/par/">PAR Leaders</a>
+      <a class="nav-link {% if active_nav == 'steal' %}active{% endif %}" href="/steal/">Steal Leaders</a>
+      <a class="nav-link {% if active_nav == 'luck' %}active{% endif %}" href="/luck/">Luck / Unluck</a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Pitchers</div>
+      <a class="nav-link {% if active_nav == 'sequence' %}active{% endif %}" href="/sequence/">Sequence</a>
+      <a class="nav-link {% if active_nav == 'getaway' %}active{% endif %}" href="/getaway/">Getaway</a>
+      <a class="nav-link {% if active_nav == 'matchup' %}active{% endif %}" href="/matchup/">Matchup</a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Players</div>
+      <a class="nav-link {% if active_nav == 'trends' %}active{% endif %}" href="/trends/">Trends</a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Live</div>
+      <a class="nav-link {% if active_nav == 'live-par' %}active{% endif %}" href="/par/live">Live PAR</a>
+      <a class="nav-link {% if active_nav == 'live-steal' %}active{% endif %}" href="/steal/live">Live Steals</a>
+    </div>
+
+    <div class="nav-section" style="margin-top:auto; border-top:1px solid var(--border); padding-top:10px;">
+      <a class="nav-link" href="https://sequencebaseball.com" target="_blank" style="font-size:0.72rem; color:var(--text-muted);">sequencebaseball.com</a>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+</div>
+</body>
+</html>

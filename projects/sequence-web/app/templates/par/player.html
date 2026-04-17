@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}{{ pitcher_name }} PAR History — Sequence Baseball{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">{{ pitcher_name }}</h1>
+  <p class="page-subtitle">
+    Pitcher Ace Rating — game-by-game history
+    {% if rank %} &nbsp;·&nbsp; Ranked #{{ rank }} this season{% endif %}
+  </p>
+</div>
+
+{% if avg is not none %}
+<div style="display:flex;gap:20px;margin-bottom:24px;flex-wrap:wrap;">
+  <div class="card" style="min-width:120px;text-align:center;">
+    <div class="card-title">Avg PAR</div>
+    <div style="font-size:2rem;font-weight:700;">{{ "%.1f"|format(avg) }}</div>
+  </div>
+  <div class="card" style="min-width:120px;text-align:center;">
+    <div class="card-title">Games</div>
+    <div style="font-size:2rem;font-weight:700;">{{ games|length }}</div>
+  </div>
+  {% if games %}
+  <div class="card" style="min-width:120px;text-align:center;">
+    <div class="card-title">Best</div>
+    <div style="font-size:2rem;font-weight:700;">{{ "%.1f"|format(games|map(attribute='score')|max) }}</div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-title">Game Log</div>
+  {% if games %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Opp</th>
+        <th class="right">IP</th>
+        <th class="right">H</th>
+        <th class="right">ER</th>
+        <th class="right">BB</th>
+        <th class="right">K</th>
+        <th class="right">PAR</th>
+        <th class="center">Grade</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in games %}
+      <tr>
+        <td class="muted">{{ g.game_date }}</td>
+        <td>{{ g.opponent }}</td>
+        <td class="right">{{ g.ip }}</td>
+        <td class="right">{{ g.h }}</td>
+        <td class="right">{{ g.er }}</td>
+        <td class="right">{{ g.bb }}</td>
+        <td class="right">{{ g.k }}</td>
+        <td class="right"><strong>{{ "%.1f"|format(g.score) }}</strong></td>
+        <td class="center"><span class="grade grade-{{ g.grade_css }}">{{ g.grade }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin:0;">No regular season games on record.</p>
+  {% endif %}
+</div>
+
+<p><a class="player-link" href="/par/">&larr; Back to leaderboard</a></p>
+{% endblock %}

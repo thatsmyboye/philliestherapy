@@ -1,0 +1,33 @@
+{% if error %}
+<div class="card" style="border-color:var(--red);">
+  <p style="color:var(--red);margin:0;">{{ error }}</p>
+</div>
+
+{% elif result %}
+<div class="page-header" style="margin-top:16px;">
+  <h2 style="margin:0 0 4px;font-size:1.1rem;">{{ result.player_name }}</h2>
+  <p class="page-subtitle">
+    {{ "Pitcher" if result.is_pitcher else "Hitter" }} ·
+    Last {{ result.days }} days ({{ result.win_start }} → {{ result.win_end }})
+    vs. prior {{ result.days }} days ({{ result.prior_start }} → {{ result.prior_end }})
+    · {{ result.sample_n }} {{ "pitches" if result.is_pitcher else "plate appearances" }} in window
+  </p>
+</div>
+
+{% if result.trends %}
+<div class="trend-grid">
+  {% for t in result.trends %}
+  <div class="trend-card">
+    <div class="trend-metric">{{ t.title }}</div>
+    <div class="trend-value {{ t.delta_css }}">{{ t.window_val }}</div>
+    <div class="trend-delta {{ t.delta_css }}">{{ t.delta_str }} vs prior window</div>
+    <div class="trend-context">Prior: {{ t.prior_val }} &nbsp;·&nbsp; n={{ t.n }} {{ t.n_label }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <p class="muted" style="margin:0;">No metrics crossed the significance threshold in this window. Try a longer window or check back when there's more data.</p>
+</div>
+{% endif %}
+{% endif %}

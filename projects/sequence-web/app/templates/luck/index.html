@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Luck / Unluck — Sequence Baseball{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Luck / Unluck</h1>
+  <p class="page-subtitle">xBA-based luck scoring — who's been helped or hurt by batted ball outcomes relative to expected. Positive = lucky, negative = unlucky.</p>
+</div>
+
+<!-- Controls -->
+<form method="GET" action="/luck/" style="margin-bottom:20px;">
+  <div class="search-bar">
+    <select class="search-input" name="team_id" style="flex:0;min-width:220px;">
+      {% for t in teams %}
+      <option value="{{ t.id }}" {% if t.id == selected_team_id %}selected{% endif %}>{{ t.name }}</option>
+      {% endfor %}
+    </select>
+    <select class="search-input" name="lucky" style="flex:0;min-width:140px;">
+      <option value="1" {% if lucky %}selected{% endif %}>Luckiest</option>
+      <option value="0" {% if not lucky %}selected{% endif %}>Unluckiest</option>
+    </select>
+    <button class="btn" type="submit">Show</button>
+  </div>
+</form>
+
+{% if error %}
+<div class="card" style="border-color:var(--red);">
+  <p style="color:var(--red);margin:0;">{{ error }}</p>
+</div>
+{% else %}
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+
+  <!-- Hitters -->
+  <div class="card">
+    <div class="card-title">{{ "Luckiest" if lucky else "Unluckiest" }} Hitters — {{ team_name }}</div>
+    {% if hitters %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="right">#</th>
+          <th>Player</th>
+          <th class="right">Net Luck Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in hitters %}
+        <tr>
+          <td class="rank-cell right">{{ loop.index }}</td>
+          <td>{{ h.name }}</td>
+          <td class="right">
+            <span class="{% if h.score > 0 %}delta-pos{% elif h.score < 0 %}delta-neg{% else %}delta-neu{% endif %}">
+              {{ "%+.2f"|format(h.score) }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted" style="margin:0;">No data available.</p>
+    {% endif %}
+  </div>
+
+  <!-- Pitchers -->
+  <div class="card">
+    <div class="card-title">{{ "Luckiest" if lucky else "Unluckiest" }} Pitchers — {{ team_name }}</div>
+    {% if pitchers %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="right">#</th>
+          <th>Player</th>
+          <th class="right">Net Luck Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pitchers %}
+        <tr>
+          <td class="rank-cell right">{{ loop.index }}</td>
+          <td>{{ p.name }}</td>
+          <td class="right">
+            <span class="{% if p.score > 0 %}delta-pos{% elif p.score < 0 %}delta-neg{% else %}delta-neu{% endif %}">
+              {{ "%+.2f"|format(p.score) }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted" style="margin:0;">No data available.</p>
+    {% endif %}
+  </div>
+
+</div>
+
+<p style="margin-top:16px;font-size:0.78rem;color:var(--text-muted);">
+  Hitter luck: hits on xBA &lt; .250 (lucky) minus outs on xBA &gt; .500 (unlucky).<br>
+  Pitcher luck: outs on xBA &gt; .500 (lucky) minus hits on xBA &lt; .250 (unlucky).<br>
+  Data: Statcast / Baseball Savant.
+</p>
+{% endif %}
+{% endblock %}

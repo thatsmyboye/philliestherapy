@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Player Trends — Sequence Baseball{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Player Trends</h1>
+  <p class="page-subtitle">7/14/30-day Statcast trend detection for any MLB hitter or pitcher. Surfaces changes that cross meaningful significance thresholds.</p>
+</div>
+
+<form
+  method="POST"
+  action="/trends/"
+  hx-post="/trends/"
+  hx-target="#trends-results"
+  hx-swap="innerHTML"
+  hx-indicator="#search-spinner"
+>
+  <div class="search-bar">
+    <input
+      class="search-input"
+      type="text"
+      name="player_name"
+      placeholder="Player name (hitter or pitcher)"
+      value="{{ player_name }}"
+      required
+      autocomplete="off"
+    >
+    <select class="search-input" name="days" style="flex:0;min-width:140px;">
+      <option value="7"  {% if days == 7  %}selected{% endif %}>Last 7 days</option>
+      <option value="14" {% if days == 14 %}selected{% endif %}>Last 14 days</option>
+      <option value="30" {% if days == 30 %}selected{% endif %}>Last 30 days</option>
+    </select>
+    <button class="btn" type="submit">Analyze</button>
+    <span id="search-spinner" class="htmx-indicator spinner"></span>
+  </div>
+</form>
+
+<div id="trends-results">
+  {% if result or error %}
+    {% include "trends/_results.html" %}
+  {% else %}
+  <p class="muted" style="margin-top:24px;">Enter a player name and click Analyze to see their most significant recent Statcast trends.</p>
+  {% endif %}
+</div>
+{% endblock %}

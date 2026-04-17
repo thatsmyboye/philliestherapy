@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Pitch Sequence Analysis — Sequence Baseball{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Pitch Sequence Analysis</h1>
+  <p class="page-subtitle">Top two-pitch sequences ranked by whiff rate, chase rate, or weak contact. Minimum 15 occurrences.</p>
+</div>
+
+<form
+  method="POST"
+  action="/sequence/"
+  hx-post="/sequence/"
+  hx-target="#sequence-results"
+  hx-swap="innerHTML"
+  hx-indicator="#search-spinner"
+>
+  <div class="search-bar">
+    <input
+      class="search-input"
+      type="text"
+      name="pitcher_name"
+      placeholder="Pitcher name (e.g. Zack Wheeler)"
+      value="{{ pitcher_name }}"
+      required
+      autocomplete="off"
+    >
+    <select class="search-input" name="batter_hand" style="flex:0;min-width:120px;">
+      <option value="" {% if batter_hand == '' %}selected{% endif %}>All batters</option>
+      <option value="R" {% if batter_hand == 'R' %}selected{% endif %}>vs RHH</option>
+      <option value="L" {% if batter_hand == 'L' %}selected{% endif %}>vs LHH</option>
+    </select>
+    <select class="search-input" name="metric" style="flex:0;min-width:160px;">
+      <option value="overall" {% if metric == 'overall' %}selected{% endif %}>Overall Score</option>
+      <option value="whiff_rate" {% if metric == 'whiff_rate' %}selected{% endif %}>Whiff Rate</option>
+      <option value="chase_rate" {% if metric == 'chase_rate' %}selected{% endif %}>Chase Rate</option>
+      <option value="weak_contact" {% if metric == 'weak_contact' %}selected{% endif %}>Weak Contact</option>
+    </select>
+    <button class="btn" type="submit">Analyze</button>
+    <span id="search-spinner" class="htmx-indicator spinner"></span>
+  </div>
+</form>
+
+<div id="sequence-results">
+  {% if result or error %}
+    {% include "sequence/_results.html" %}
+  {% else %}
+  <p class="muted" style="margin-top:24px;">Enter a pitcher name and click Analyze to see their most effective pitch sequences.</p>
+  {% endif %}
+</div>
+{% endblock %}

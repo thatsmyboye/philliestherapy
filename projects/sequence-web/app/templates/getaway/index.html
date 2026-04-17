@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Getaway — Sequence Baseball{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Getaway Analysis</h1>
+  <p class="page-subtitle">How well does a pitcher escape the consequences of genuinely bad pitches? Scored on location, movement, velocity, and RE24 run expectancy.</p>
+</div>
+
+<form
+  method="POST"
+  action="/getaway/"
+  hx-post="/getaway/"
+  hx-target="#getaway-results"
+  hx-swap="innerHTML"
+  hx-indicator="#search-spinner"
+>
+  <div class="search-bar">
+    <input
+      class="search-input"
+      type="text"
+      name="pitcher_name"
+      placeholder="Pitcher name (e.g. Aaron Nola)"
+      value="{{ pitcher_name }}"
+      required
+      autocomplete="off"
+    >
+    <button class="btn" type="submit">Analyze</button>
+    <span id="search-spinner" class="htmx-indicator spinner"></span>
+  </div>
+</form>
+
+<div id="getaway-results">
+  {% if result or error %}
+    {% include "getaway/_results.html" %}
+  {% else %}
+  <p class="muted" style="margin-top:24px;">Enter a pitcher name to see how often they escape the consequences of truly bad pitches.</p>
+  {% endif %}
+</div>
+{% endblock %}

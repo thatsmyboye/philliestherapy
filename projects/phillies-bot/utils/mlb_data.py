@@ -1047,6 +1047,233 @@ def get_phillies_historical_roster(year: int) -> list[dict]:
         return []
 
 
+# ---------------------------------------------------------------------------
+# Generic team helpers (used by the web app; bot uses the Phillies-specific versions above)
+# ---------------------------------------------------------------------------
+
+def get_all_mlb_teams() -> list[dict]:
+    """Return all MLB teams sorted by name (24-hour cache). Each entry: {id, name, abbreviation, league, division}."""
+    key = "all_mlb_teams"
+    cached = _cache_get(key, 24 * 3600)
+    if cached is not None:
+        return cached
+    try:
+        data = statsapi.get("teams", {"sportId": 1, "hydrate": "division,league"})
+        teams = []
+        for t in data.get("teams", []):
+            if not t.get("active", True):
+                continue
+            teams.append({
+                "id": t["id"],
+                "name": t.get("name", ""),
+                "abbreviation": t.get("abbreviation", ""),
+                "league": t.get("league", {}).get("name", ""),
+                "league_id": t.get("league", {}).get("id"),
+                "division": t.get("division", {}).get("name", ""),
+            })
+        teams.sort(key=lambda x: x["name"])
+        _cache_set(key, teams)
+        return teams
+    except Exception:
+        return []
+
+
+def get_team_roster(team_id: int) -> list[dict]:
+    """Return the 40-man roster for any team (1-hour cache). Each entry: {id, fullName, position, status_code, on_il, is_pitcher}."""
+    key = f"team_roster_{team_id}_{CURRENT_SEASON}"
+    cached = _cache_get(key, 3600)
+    if cached is not None:
+        return cached
+    try:
+        data = statsapi.get(
+            "team_roster",
+            {"teamId": team_id, "rosterType": "40Man", "season": CURRENT_SEASON},
+        )
+        players = []
+        for entry in data.get("roster", []):
+            status_code = entry.get("status", {}).get("code", "A")
+            position = entry.get("position", {}).get("abbreviation", "")
+            players.append({
+                "id": entry["person"]["id"],
+                "fullName": entry["person"]["fullName"],
+                "position": position,
+                "status_code": status_code,
+                "on_il": status_code not in ("A", ""),
+                "is_pitcher": position == "P",
+            })
+        _cache_set(key, players)
+        return players
+    except Exception:
+        return []
+
+
+def get_todays_games(team_id: Optional[int] = None) -> list[dict]:
+    """Return today's MLB schedule, optionally filtered to a single team (2-minute cache)."""
+    key = f"schedule_{date.today().isoformat()}_{team_id or 'all'}"
+    cached = _cache_get(key, 120)
+    if cached is not None:
+        return cached
+    try:
+        today = date.today().strftime("%Y-%m-%d")
+        kwargs: dict = {"date": today, "sportId": 1}
+        if team_id:
+            kwargs["team"] = team_id
+        result = statsapi.schedule(**kwargs)
+        _cache_set(key, result)
+        return result
+    except Exception:
+        return []
+
+
+def get_next_game_with_probables_for_team(team_id: int, days_ahead: int = 10) -> Optional[dict]:
+    """
+    Generic version of get_next_game_with_probables() for any team.
+
+    Returns the same shape dict as get_next_game_with_probables() but with
+    'team_is_home' (bool) and 'team_probable' / 'opp_probable' instead of phi_*.
+    """
+    today = date.today()
+    end = today + __import__("datetime").timedelta(days=days_ahead)
+    try:
+        data = statsapi.get(
+            "schedule",
+            {
+                "sportId": 1,
+                "teamId": team_id,
+                "startDate": today.strftime("%Y-%m-%d"),
+                "endDate": end.strftime("%Y-%m-%d"),
+                "gameType": "S,R",
+                "hydrate": "probablePitcher,team",
+            },
+        )
+    except Exception:
+        return None
+
+    terminal = {"Final", "Game Over", "Completed Early"}
+    for date_entry in data.get("dates", []):
+        for game in date_entry.get("games", []):
+            status = game.get("status", {}).get("detailedState", "")
+            if status in terminal:
+                continue
+
+            home = game.get("teams", {}).get("home", {})
+            away = game.get("teams", {}).get("away", {})
+            home_id = home.get("team", {}).get("id")
+            team_is_home = home_id == team_id
+
+            team_side = home if team_is_home else away
+            opp_side = away if team_is_home else home
+
+            team_prob = team_side.get("probablePitcher")
+            opp_prob = opp_side.get("probablePitcher")
+            opp_team = opp_side.get("team", {})
+
+            return {
+                "game_date": date_entry.get("date", ""),
+                "game_pk": game.get("gamePk"),
+                "status": status,
+                "team_is_home": team_is_home,
+                "team_probable": (
+                    {"id": team_prob["id"], "fullName": team_prob["fullName"]}
+                    if team_prob else None
+                ),
+                "opp_probable": (
+                    {"id": opp_prob["id"], "fullName": opp_prob["fullName"]}
+                    if opp_prob else None
+                ),
+                "opponent": {
+                    "id": opp_team.get("id"),
+                    "name": opp_team.get("name", "Opponent"),
+                    "abbreviation": opp_team.get("abbreviation", "OPP"),
+                },
+                "home_team": {
+                    "id": home.get("team", {}).get("id"),
+                    "name": home.get("team", {}).get("name", ""),
+                    "abbreviation": home.get("team", {}).get("abbreviation", ""),
+                },
+                "away_team": {
+                    "id": away.get("team", {}).get("id"),
+                    "name": away.get("team", {}).get("name", ""),
+                    "abbreviation": away.get("team", {}).get("abbreviation", ""),
+                },
+            }
+    return None
+
+
+def get_team_batter_statcast(team_abbr: str) -> list[dict]:
+    """Fetch all batter Statcast events for any team this season (4-hour cache)."""
+    year = _current_year()
+    key = f"team_batter_statcast_{team_abbr}_{year}"
+    cached = _cache_get(key, 4 * 3600)
+    if cached is not None:
+        return cached
+    today = date.today().strftime("%Y-%m-%d")
+    url = _statcast_team_url(team_abbr, "batter", get_season_start(), today, get_game_type())
+    rows = _fetch_statcast_csv(url)
+    result = [r for r in rows if r.get("game_type") == get_game_type()]
+    _cache_set(key, result)
+    return result
+
+
+def get_team_luck(team_abbr: str, team_id: int, lucky: bool) -> dict[str, list[dict]]:
+    """
+    Generic version of get_phillies_luck() for any team.
+
+    team_abbr: Baseball Savant abbreviation (e.g. "PHI", "NYY")
+    team_id:   MLBAM team ID (for roster lookup)
+    lucky:     True → top 3 luckiest; False → top 3 unluckiest
+    """
+    from collections import defaultdict as _defaultdict
+
+    roster = get_team_roster(team_id)
+    player_info = {
+        p["id"]: {"name": p["fullName"], "is_pitcher": p["is_pitcher"]}
+        for p in roster
+    }
+
+    batter_rows = get_team_batter_statcast(team_abbr)
+    batter_groups: dict[str, list[dict]] = _defaultdict(list)
+    for row in batter_rows:
+        b = row.get("batter", "")
+        if b:
+            batter_groups[b].append(row)
+
+    hitter_scores: list[dict] = []
+    for pid_str, grp in batter_groups.items():
+        try:
+            pid = int(pid_str)
+        except ValueError:
+            continue
+        info = player_info.get(pid)
+        if info is None or info["is_pitcher"]:
+            continue
+        score = _hitter_luck_score(grp)
+        hitter_scores.append({"name": info["name"], "score": round(score, 2), "player_id": pid})
+
+    pitcher_rows = get_team_pitcher_statcast(team_abbr)
+    pitcher_groups: dict[str, list[dict]] = _defaultdict(list)
+    for row in pitcher_rows:
+        p = row.get("pitcher", "")
+        if p:
+            pitcher_groups[p].append(row)
+
+    pitcher_scores: list[dict] = []
+    for pid_str, grp in pitcher_groups.items():
+        try:
+            pid = int(pid_str)
+        except ValueError:
+            continue
+        info = player_info.get(pid)
+        if info is None or not info["is_pitcher"]:
+            continue
+        score = _pitcher_luck_score(grp)
+        pitcher_scores.append({"name": info["name"], "score": round(score, 2), "player_id": pid})
+
+    hitter_scores.sort(key=lambda x: x["score"], reverse=lucky)
+    pitcher_scores.sort(key=lambda x: x["score"], reverse=lucky)
+    return {"hitters": hitter_scores[:3], "pitchers": pitcher_scores[:3]}
+
+
 def get_player_phillies_season_stats(player_id: int, year: int) -> dict:
     """
     Return a player's hitting and pitching stats for the given year while on the Phillies.

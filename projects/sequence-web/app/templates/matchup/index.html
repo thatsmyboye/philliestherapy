@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Matchup Preview — Sequence Baseball{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Matchup Preview</h1>
+  <p class="page-subtitle">Next game probable pitcher arsenal breakdowns from Statcast.</p>
+</div>
+
+<!-- Team selector -->
+<form method="GET" action="/matchup/" style="margin-bottom:20px;">
+  <div class="search-bar">
+    <select class="search-input" name="team_id" style="flex:0;min-width:220px;" onchange="this.form.submit()">
+      {% for t in teams %}
+      <option value="{{ t.id }}" {% if t.id == selected_team_id %}selected{% endif %}>{{ t.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+
+{% if error %}
+<div class="card" style="border-color:var(--red);">
+  <p style="color:var(--red);margin:0;">{{ error }}</p>
+</div>
+{% elif not game %}
+<div class="card">
+  <p class="muted" style="margin:0;">No upcoming game with probable pitchers found in the next 10 days.</p>
+</div>
+{% else %}
+
+<!-- Game header -->
+<div class="card">
+  <div style="font-size:1.1rem;font-weight:600;margin-bottom:4px;">
+    {{ game.away_team.name }} @ {{ game.home_team.name }}
+  </div>
+  <div class="muted" style="font-size:0.82rem;">{{ game.game_date }} &nbsp;·&nbsp; {{ game.status }}</div>
+</div>
+
+<!-- Pitcher columns -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px;">
+
+  {% for role_key, role_label in [('team', game.away_team.name if not game.team_is_home else game.home_team.name), ('opp', game.home_team.name if not game.team_is_home else game.away_team.name)] %}
+  {% set pd = pitcher_data.get(role_key) %}
+  <div class="card">
+    <div class="card-title">{{ role_label }}</div>
+    {% if pd %}
+    <div style="font-size:1rem;font-weight:600;margin-bottom:12px;">{{ pd.name }}</div>
+    <div class="muted" style="font-size:0.75rem;margin-bottom:8px;">{{ pd.total_pitches }} pitches this season</div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Pitch</th>
+          <th class="right">Usage%</th>
+          <th class="right">Velo</th>
+          <th class="right">H Break</th>
+          <th class="right">V Break</th>
+          <th class="right">Whiff%</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pd.arsenal %}
+        <tr>
+          <td>{{ p.label }}</td>
+          <td class="right">{{ "%.1f"|format(p.usage_pct) }}%</td>
+          <td class="right">{{ "%.1f"|format(p.avg_velo) if p.avg_velo else "—" }}</td>
+          <td class="right">{{ "%.1f"|format(p.h_break) if p.h_break else "—" }}</td>
+          <td class="right">{{ "%.1f"|format(p.v_break) if p.v_break else "—" }}</td>
+          <td class="right">{{ "%.1f"|format(p.whiff_pct) }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted" style="margin:0;">No probable pitcher announced.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+</div>
+{% endif %}
+{% endblock %}
