@@ -1,0 +1,60 @@
+{% if error %}
+<div class="card" style="border-color:var(--red);">
+  <p style="color:var(--red);margin:0;">{{ error }}</p>
+</div>
+
+{% elif result %}
+<div class="card">
+  <div class="card-title">
+    {{ result.pitcher_name }} — Top Sequences
+    <span class="muted" style="font-size:0.75rem;margin-left:8px;">({{ result.total_pitches }} pitches this season)</span>
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="right">#</th>
+        <th>Sequence</th>
+        <th class="right">Count</th>
+        <th class="right">Whiff%</th>
+        <th class="right">Chase%</th>
+        <th class="right">Weak%</th>
+        <th class="right">Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in result.sequences %}
+      <tr>
+        <td class="rank-cell right">{{ loop.index }}</td>
+        <td><strong>{{ row.Sequence }}</strong></td>
+        <td class="right muted">{{ row.Usage }}</td>
+        <td class="right">
+          {% if row['Whiff Rate'] %}{{ "%.1f"|format(row['Whiff Rate'] * 100) }}%{% else %}—{% endif %}
+        </td>
+        <td class="right">
+          {% if row['Chase Rate'] %}{{ "%.1f"|format(row['Chase Rate'] * 100) }}%{% else %}—{% endif %}
+        </td>
+        <td class="right">
+          {% if row['Weak Contact Rate'] %}{{ "%.1f"|format(row['Weak Contact Rate'] * 100) }}%{% else %}—{% endif %}
+        </td>
+        <td class="right"><strong>
+          {% if row['Overall Score'] %}{{ "%.1f"|format(row['Overall Score'] * 100) }}{% else %}—{% endif %}
+        </strong></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if result.pitcher_id %}
+<div class="card">
+  <div class="card-title">Sequence Chart</div>
+  <img
+    src="/sequence/chart/{{ result.pitcher_id }}.png?metric={{ result.metric }}&batter_hand={{ result.batter_hand }}"
+    alt="Sequence chart for {{ result.pitcher_name }}"
+    style="max-width:100%;border-radius:4px;"
+    loading="lazy"
+  >
+</div>
+{% endif %}
+{% endif %}

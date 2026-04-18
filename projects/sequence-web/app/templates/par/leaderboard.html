@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}PAR Leaderboard — Sequence Baseball{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">PAR Leaderboard</h1>
+  <p class="page-subtitle">Pitcher Ace Rating — proprietary 0–100 composite score grading each starting pitcher outing across 7 Statcast components.</p>
+</div>
+
+<!-- Season averages -->
+<div class="card">
+  <div class="card-title">Season Average Leaders</div>
+  {% if season_leaders %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="right">#</th>
+        <th>Pitcher</th>
+        <th class="right">GS</th>
+        <th class="right">Avg PAR</th>
+        <th class="right">Best</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in season_leaders %}
+      <tr>
+        <td class="rank-cell right">{{ loop.index }}</td>
+        <td>
+          <a class="player-link" href="/par/{{ entry.pitcher_id }}">{{ entry.name }}</a>
+        </td>
+        <td class="right muted">{{ entry.games }}</td>
+        <td class="right">
+          <strong>{{ "%.1f"|format(entry.avg) }}</strong>
+        </td>
+        <td class="right muted">{{ "%.1f"|format(entry.best) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin:0;">No leaderboard data yet this season.</p>
+  {% endif %}
+</div>
+
+<!-- Top individual games -->
+<div class="card">
+  <div class="card-title">Top Individual Performances</div>
+  {% if top_games %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="right">#</th>
+        <th>Pitcher</th>
+        <th>Date</th>
+        <th>Opp</th>
+        <th class="right">IP</th>
+        <th class="right">K</th>
+        <th class="right">BB</th>
+        <th class="right">ER</th>
+        <th class="right">PAR</th>
+        <th class="center">Grade</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in top_games %}
+      <tr>
+        <td class="rank-cell right">{{ loop.index }}</td>
+        <td><a class="player-link" href="/par/{{ g.pitcher_id }}">{{ g.pitcher_name }}</a></td>
+        <td class="muted">{{ g.game_date }}</td>
+        <td class="muted">{{ g.opponent }}</td>
+        <td class="right">{{ g.ip }}</td>
+        <td class="right">{{ g.k }}</td>
+        <td class="right">{{ g.bb }}</td>
+        <td class="right">{{ g.er }}</td>
+        <td class="right"><strong>{{ "%.1f"|format(g.score) }}</strong></td>
+        <td class="center"><span class="grade grade-{{ g.grade_css }}">{{ g.grade }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin:0;">No data yet.</p>
+  {% endif %}
+</div>
+
+<!-- PAR model explanation -->
+<div class="card">
+  <div class="card-title">How PAR is Calculated</div>
+  <table class="data-table" style="max-width:500px;">
+    <thead>
+      <tr><th>Component</th><th class="right">Weight</th><th>What It Measures</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Efficiency</td><td class="right">22%</td><td class="muted">Outs recorded vs. 27 (complete game)</td></tr>
+      <tr><td>Run Prevention</td><td class="right">24%</td><td class="muted">ERA-based exponential decay</td></tr>
+      <tr><td>Strikeout Rate</td><td class="right">14%</td><td class="muted">K/9 normalized to 0–100</td></tr>
+      <tr><td>Walk Control</td><td class="right">14%</td><td class="muted">BB/9 inverted (lower is better)</td></tr>
+      <tr><td>Strike/Ball Ratio</td><td class="right">10%</td><td class="muted">% of pitches that are strikes</td></tr>
+      <tr><td>CSW%</td><td class="right">8%</td><td class="muted">Called + Swinging Strikes / total pitches</td></tr>
+      <tr><td>Batted Ball Quality</td><td class="right">8%</td><td class="muted">Exit velo + launch angle composite</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:12px;font-size:0.78rem;color:var(--text-muted);">
+    Grades: <span class="grade grade-S">S</span> 90–100 &nbsp;
+    <span class="grade grade-Ap">A+</span> 80–89 &nbsp;
+    <span class="grade grade-A">A</span> 70–79 &nbsp;
+    <span class="grade grade-B">B</span> 60–69 &nbsp;
+    <span class="grade grade-C">C</span> 50–59 &nbsp;
+    <span class="grade grade-D">D</span> 40–49 &nbsp;
+    <span class="grade grade-F">F</span> 0–39
+  </p>
+</div>
+{% endblock %}

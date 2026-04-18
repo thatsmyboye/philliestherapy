@@ -1,0 +1,106 @@
+{% if error %}
+<div class="card" style="border-color:var(--red);">
+  <p style="color:var(--red);margin:0;">{{ error }}</p>
+</div>
+
+{% elif result %}
+<!-- Summary stats -->
+<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
+  <div class="card" style="min-width:140px;text-align:center;">
+    <div class="card-title">Escape Rate</div>
+    <div style="font-size:2rem;font-weight:700;">{{ "%.1f"|format(result.escape_rate) }}%</div>
+    <div style="margin-top:4px;"><span class="grade grade-{{ result.grade_css }}">{{ result.grade_letter }}</span> {{ result.grade_label }}</div>
+  </div>
+  <div class="card" style="min-width:120px;text-align:center;">
+    <div class="card-title">Terrible Pitches</div>
+    <div style="font-size:2rem;font-weight:700;">{{ result.total_terrible }}</div>
+    <div class="muted" style="font-size:0.78rem;">badness ≥ 50</div>
+  </div>
+  <div class="card" style="min-width:120px;text-align:center;">
+    <div class="card-title">Escaped</div>
+    <div style="font-size:2rem;font-weight:700;">{{ result.total_escaped }}</div>
+  </div>
+  <div class="card" style="min-width:130px;text-align:center;">
+    <div class="card-title">Runs Stolen</div>
+    <div style="font-size:2rem;font-weight:700;">{{ "%.2f"|format(result.runs_stolen) }}</div>
+    <div class="muted" style="font-size:0.78rem;">leverage-weighted</div>
+  </div>
+</div>
+
+{% if result.low_sample %}
+<div class="card" style="border-color:var(--yellow);">
+  <p style="color:var(--yellow);margin:0;">Small sample — fewer than 15 qualifying terrible pitches. Treat these grades with caution.</p>
+</div>
+{% endif %}
+
+<!-- Top escape moments -->
+{% if result.top_escapes %}
+<div class="card">
+  <div class="card-title">Top Escape Moments (Worst Pitch × Best Outcome)</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Pitch</th>
+        <th class="right">Velo</th>
+        <th>Location</th>
+        <th>Count</th>
+        <th>Outcome</th>
+        <th class="right">Badness</th>
+        <th class="right">Run Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in result.top_escapes %}
+      <tr>
+        <td class="muted">{{ e.date }}</td>
+        <td>{{ e.label }}</td>
+        <td class="right">
+          {{ "%.1f"|format(e.velo) if e.velo else "—" }}
+          {% if e.velo_delta %}
+            <span class="{% if e.velo_delta < 0 %}delta-neg{% else %}delta-pos{% endif %}" style="font-size:0.75rem;">
+              ({{ "%+.1f"|format(e.velo_delta) }})
+            </span>
+          {% endif %}
+        </td>
+        <td class="muted" style="font-size:0.78rem;">{{ e.zone_desc }}</td>
+        <td class="muted">{{ e.count }}</td>
+        <td>{{ e.outcome }}</td>
+        <td class="right"><span style="color:var(--red);">{{ "%.0f"|format(e.badness) }}</span></td>
+        <td class="right"><span class="delta-pos">+{{ "%.2f"|format(e.escape_rv) }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- By pitch type -->
+{% if result.by_type %}
+<div class="card">
+  <div class="card-title">By Pitch Type (≥5 terrible pitches)</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Pitch</th>
+        <th class="right">Terrible</th>
+        <th class="right">Escaped</th>
+        <th class="right">Escape%</th>
+        <th class="right">Runs Saved</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in result.by_type %}
+      <tr>
+        <td>{{ t.label }}</td>
+        <td class="right">{{ t.total }}</td>
+        <td class="right">{{ t.escaped }}</td>
+        <td class="right">{{ "%.1f"|format(t.rate) }}%</td>
+        <td class="right">{{ "%.2f"|format(t.runs) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endif %}
