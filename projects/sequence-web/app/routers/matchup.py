@@ -24,8 +24,7 @@ async def matchup_index(request: Request, team_id: int = 143):
             if probable:
                 pitcher_data[role] = _build_pitcher_profile(probable["id"], probable["fullName"])
 
-    return templates.TemplateResponse("matchup/index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "matchup/index.html", {
         "active_nav": "matchup",
         "teams": teams,
         "selected_team_id": team_id,

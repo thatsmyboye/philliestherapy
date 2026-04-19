@@ -11,8 +11,7 @@ templates = Jinja2Templates(directory=Path(__file__).parents[1] / "templates")
 
 @router.get("/sequence/", response_class=HTMLResponse)
 async def sequence_index(request: Request):
-    return templates.TemplateResponse("sequence/index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "sequence/index.html", {
         "active_nav": "sequence",
         "result": None,
         "error": None,
@@ -73,14 +72,12 @@ async def sequence_search(
 
     # HTMX partial or full page
     if request.headers.get("HX-Request"):
-        return templates.TemplateResponse("sequence/_results.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "sequence/_results.html", {
             "result": result,
             "error": error,
         })
 
-    return templates.TemplateResponse("sequence/index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "sequence/index.html", {
         "active_nav": "sequence",
         "result": result,
         "error": error,
