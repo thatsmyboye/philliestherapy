@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.routers import home, par, sequence, trends, getaway, matchup, steal, luck
+from app.routers import home, par, sequence, trends, getaway, matchup, steal, luck, api
 from app.services.live import lifespan
 
 app = FastAPI(title="Sequence Baseball", lifespan=lifespan)
@@ -29,3 +29,4 @@ app.include_router(getaway.router)
 app.include_router(matchup.router)
 app.include_router(steal.router)
 app.include_router(luck.router)
+app.include_router(api.router)
