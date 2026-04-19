@@ -10,8 +10,7 @@ templates = Jinja2Templates(directory=Path(__file__).parents[1] / "templates")
 
 @router.get("/getaway/", response_class=HTMLResponse)
 async def getaway_index(request: Request):
-    return templates.TemplateResponse("getaway/index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "getaway/index.html", {
         "active_nav": "getaway",
         "result": None,
         "error": None,
@@ -74,14 +73,12 @@ async def getaway_search(
         error = str(exc)
 
     if request.headers.get("HX-Request"):
-        return templates.TemplateResponse("getaway/_results.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "getaway/_results.html", {
             "result": result,
             "error": error,
         })
 
-    return templates.TemplateResponse("getaway/index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "getaway/index.html", {
         "active_nav": "getaway",
         "result": result,
         "error": error,

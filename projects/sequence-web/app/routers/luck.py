@@ -25,8 +25,7 @@ async def luck_index(request: Request, team_id: int = 143, lucky: int = 1):
 
     team_name = next((t["name"] for t in teams if t["id"] == team_id), f"Team {team_id}")
 
-    return templates.TemplateResponse("luck/index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "luck/index.html", {
         "active_nav": "luck",
         "teams": teams,
         "selected_team_id": team_id,

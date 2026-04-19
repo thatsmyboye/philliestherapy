@@ -56,8 +56,7 @@ async def par_leaderboard(request: Request, n: int = 25):
         }
         top_games_dicts.append(d)
 
-    return templates.TemplateResponse("par/leaderboard.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "par/leaderboard.html", {
         "active_nav": "par",
         "season_leaders": season_leaders,
         "top_games": top_games_dicts,
@@ -74,8 +73,7 @@ async def par_player(request: Request, pitcher_id: int):
     all_records.sort(key=lambda r: r.game_date, reverse=True)
 
     if not all_records:
-        return templates.TemplateResponse("par/player.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "par/player.html", {
             "active_nav": "par",
             "pitcher_name": f"Pitcher #{pitcher_id}",
             "games": [],
@@ -102,8 +100,7 @@ async def par_player(request: Request, pitcher_id: int):
             "h": r.h,
         })
 
-    return templates.TemplateResponse("par/player.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "par/player.html", {
         "active_nav": "par",
         "pitcher_name": pitcher_name,
         "pitcher_id": pitcher_id,
@@ -115,8 +112,7 @@ async def par_player(request: Request, pitcher_id: int):
 
 @router.get("/par/live", response_class=HTMLResponse)
 async def par_live(request: Request):
-    return templates.TemplateResponse("par/live.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "par/live.html", {
         "active_nav": "live-par",
     })
 

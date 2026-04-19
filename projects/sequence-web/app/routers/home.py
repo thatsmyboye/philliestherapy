@@ -18,8 +18,7 @@ async def home(request: Request):
     except Exception:
         games = []
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "index.html", {
         "active_nav": "home",
         "games": games,
     })

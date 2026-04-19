@@ -42,8 +42,7 @@ def _fmt_val(val: float, unit: str) -> str:
 
 @router.get("/trends/", response_class=HTMLResponse)
 async def trends_index(request: Request):
-    return templates.TemplateResponse("trends/index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "trends/index.html", {
         "active_nav": "trends",
         "result": None,
         "error": None,
@@ -146,14 +145,12 @@ async def trends_search(
         error = str(exc)
 
     if request.headers.get("HX-Request"):
-        return templates.TemplateResponse("trends/_results.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "trends/_results.html", {
             "result": result,
             "error": error,
         })
 
-    return templates.TemplateResponse("trends/index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "trends/index.html", {
         "active_nav": "trends",
         "result": result,
         "error": error,

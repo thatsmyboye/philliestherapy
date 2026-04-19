@@ -51,8 +51,7 @@ async def steal_leaderboard(request: Request):
         rows = []
         error = str(exc)
 
-    return templates.TemplateResponse("steal/index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "steal/index.html", {
         "active_nav": "steal",
         "rows": rows,
         "error": error,
@@ -61,8 +60,7 @@ async def steal_leaderboard(request: Request):
 
 @router.get("/steal/live", response_class=HTMLResponse)
 async def steal_live(request: Request):
-    return templates.TemplateResponse("steal/live.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "steal/live.html", {
         "active_nav": "live-steal",
     })
 
