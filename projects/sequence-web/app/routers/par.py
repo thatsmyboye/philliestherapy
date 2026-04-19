@@ -63,6 +63,23 @@ async def par_leaderboard(request: Request, n: int = 25):
     })
 
 
+@router.get("/par/live", response_class=HTMLResponse)
+async def par_live(request: Request):
+    return templates.TemplateResponse(request, "par/live.html", {
+        "active_nav": "live-par",
+    })
+
+
+@router.get("/par/stream")
+async def par_stream():
+    """SSE endpoint — streams live PAR grade events to the browser."""
+    async def event_gen():
+        async for chunk in sse_generator("par"):
+            yield chunk
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
 @router.get("/par/{pitcher_id}", response_class=HTMLResponse)
 async def par_player(request: Request, pitcher_id: int):
     lb = _lb()
@@ -108,20 +125,3 @@ async def par_player(request: Request, pitcher_id: int):
         "avg": avg,
         "rank": rank,
     })
-
-
-@router.get("/par/live", response_class=HTMLResponse)
-async def par_live(request: Request):
-    return templates.TemplateResponse(request, "par/live.html", {
-        "active_nav": "live-par",
-    })
-
-
-@router.get("/par/stream")
-async def par_stream():
-    """SSE endpoint — streams live PAR grade events to the browser."""
-    async def event_gen():
-        async for chunk in sse_generator("par"):
-            yield chunk
-
-    return StreamingResponse(event_gen(), media_type="text/event-stream")
