@@ -372,6 +372,43 @@ select.search-input {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Pitcher autocomplete ── */
+.ac-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+}
+
+.ac-wrap .search-input {
+  width: 100%;
+  flex: none;
+}
+
+.ac-dropdown {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  z-index: 200;
+  overflow: hidden;
+}
+
+.ac-item {
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.ac-item:hover,
+.ac-item.active {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .layout { flex-direction: column; }
