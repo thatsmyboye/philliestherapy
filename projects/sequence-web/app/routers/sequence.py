@@ -1,9 +1,12 @@
 import io
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parents[1] / "templates")
@@ -102,13 +105,16 @@ async def sequence_chart(
 
     df = prepare_statcast_df(rows)
     hand = batter_hand.upper() if batter_hand in ("R", "L") else None
-    sequences_df = analyze_pitch_sequences(df, pitcher_name="", min_sample_size=15, batter_hand=hand)
+    sequences_df = analyze_pitch_sequences(
+        df, pitcher_name="", min_sample_size=15, success_metric=metric, batter_hand=hand
+    )
 
     if sequences_df.empty:
         return Response(status_code=404)
 
     try:
-        png_bytes = create_sequence_chart_bytes(sequences_df, metric=metric)
-        return Response(content=png_bytes, media_type="image/png")
-    except Exception:
+        png_bytes = create_sequence_chart_bytes(sequences_df, pitcher_name="", batter_hand=hand)
+        return Response(content=png_bytes.getvalue(), media_type="image/png")
+    except Exception as exc:
+        logger.error("Chart generation failed for pitcher %s: %s", pitcher_id, exc, exc_info=True)
         return Response(status_code=500)
