@@ -85,7 +85,7 @@ async def _poll_live_games() -> None:
                     "status": game.get("status"),
                 })
         except Exception as exc:
-            logger.debug("Live poll error: %s", exc)
+            logger.warning("Live poll error: %s", exc)
         await asyncio.sleep(30)
 
 

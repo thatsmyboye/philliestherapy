@@ -1,5 +1,6 @@
 import sys
 import os
+import threading
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -14,13 +15,16 @@ templates = Jinja2Templates(directory=Path(__file__).parents[1] / "templates")
 
 # Lazy-load the leaderboard so imports resolve after sys.path is set in main.py
 _leaderboard = None
+_leaderboard_lock = threading.Lock()
 
 
 def _lb():
     global _leaderboard
     if _leaderboard is None:
-        from cogs.spgrader.leaderboard import Leaderboard
-        _leaderboard = Leaderboard()
+        with _leaderboard_lock:
+            if _leaderboard is None:
+                from cogs.spgrader.leaderboard import Leaderboard
+                _leaderboard = Leaderboard()
     return _leaderboard
 
 
