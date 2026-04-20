@@ -28,6 +28,13 @@ class PropsStore:
     # ── I/O ──────────────────────────────────────────────────────────────────
 
     def _load(self) -> dict:
+        from utils.supabase_db import kv_get
+        remote = kv_get("props_state")
+        if remote is not None:
+            for k, v in _DEFAULT.items():
+                remote.setdefault(k, type(v)() if isinstance(v, (list, dict)) else v)
+            return remote
+        # File fallback
         if PROPS_PATH.exists():
             try:
                 with open(PROPS_PATH) as f:
@@ -40,6 +47,8 @@ class PropsStore:
         return {k: (type(v)() if isinstance(v, (list, dict)) else v) for k, v in _DEFAULT.items()}
 
     def save(self) -> None:
+        from utils.supabase_db import kv_set
+        kv_set("props_state", self._data)
         PROPS_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = str(PROPS_PATH) + ".tmp"
         with open(tmp, "w") as f:

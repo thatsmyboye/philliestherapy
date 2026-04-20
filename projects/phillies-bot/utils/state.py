@@ -26,13 +26,19 @@ _DEFAULT_STATE = {
 
 
 def load() -> dict:
-    """Load state from disk; return defaults if file is missing or malformed."""
+    """Load state from Supabase; fall back to disk if unavailable."""
+    from utils.supabase_db import kv_get
+    remote = kv_get("bot_state")
+    if remote is not None:
+        for key, default in _DEFAULT_STATE.items():
+            remote.setdefault(key, default.copy() if isinstance(default, dict) else list(default))
+        return remote
+    # File fallback
     if not STATE_PATH.exists():
         return {k: (v.copy() if isinstance(v, dict) else list(v)) for k, v in _DEFAULT_STATE.items()}
     try:
         with open(STATE_PATH, "r") as f:
             data = json.load(f)
-        # Ensure all top-level keys exist
         for key, default in _DEFAULT_STATE.items():
             data.setdefault(key, default.copy() if isinstance(default, dict) else list(default))
         return data
@@ -41,7 +47,9 @@ def load() -> dict:
 
 
 def save(state: dict) -> None:
-    """Persist state to disk atomically."""
+    """Persist state to Supabase (primary) and disk (backup)."""
+    from utils.supabase_db import kv_set
+    kv_set("bot_state", state)
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = str(STATE_PATH) + ".tmp"
     with open(tmp, "w") as f:
