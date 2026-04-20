@@ -1,8 +1,11 @@
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+
+log = logging.getLogger("matchup")
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parents[1] / "templates")
@@ -10,19 +13,26 @@ templates = Jinja2Templates(directory=Path(__file__).parents[1] / "templates")
 
 @router.get("/matchup/", response_class=HTMLResponse)
 async def matchup_index(request: Request, team_id: int = 143):
-    from utils.mlb_data import get_all_mlb_teams, get_next_game_with_probables_for_team
-
-    teams = get_all_mlb_teams()
-    game = get_next_game_with_probables_for_team(team_id)
-
+    teams = []
+    game = None
     pitcher_data = {}
-    if game:
-        for role, probable in [
-            ("team", game.get("team_probable")),
-            ("opp", game.get("opp_probable")),
-        ]:
-            if probable:
-                pitcher_data[role] = _build_pitcher_profile(probable["id"], probable["fullName"])
+    error = None
+
+    try:
+        from utils.mlb_data import get_all_mlb_teams, get_next_game_with_probables_for_team
+        teams = get_all_mlb_teams()
+        game = get_next_game_with_probables_for_team(team_id)
+
+        if game:
+            for role, probable in [
+                ("team", game.get("team_probable")),
+                ("opp", game.get("opp_probable")),
+            ]:
+                if probable:
+                    pitcher_data[role] = _build_pitcher_profile(probable["id"], probable["fullName"])
+    except Exception:
+        log.error("Matchup load failed", exc_info=True)
+        error = "Data temporarily unavailable."
 
     return templates.TemplateResponse(request, "matchup/index.html", {
         "active_nav": "matchup",
@@ -30,7 +40,7 @@ async def matchup_index(request: Request, team_id: int = 143):
         "selected_team_id": team_id,
         "game": game,
         "pitcher_data": pitcher_data,
-        "error": None,
+        "error": error,
     })
 
 

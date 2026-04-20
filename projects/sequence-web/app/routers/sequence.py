@@ -31,15 +31,15 @@ async def sequence_search(
     batter_hand: str = Form(""),
     metric: str = Form("overall"),
 ):
-    from utils.player_lookup import resolve_player
-    from utils.mlb_data import get_pitcher_statcast
-    from utils.sequence_calc import prepare_statcast_df, analyze_pitch_sequences
-
     error = None
     result = None
     player_id = None
 
     try:
+        from utils.player_lookup import resolve_player
+        from utils.mlb_data import get_pitcher_statcast
+        from utils.sequence_calc import prepare_statcast_df, analyze_pitch_sequences
+
         player_id, resolved_name, lookup_err = resolve_player(pitcher_name, require_pitcher=True)
         if player_id is None:
             raise ValueError(lookup_err or f"Could not find pitcher '{pitcher_name}'")
@@ -96,23 +96,23 @@ async def sequence_chart(
     batter_hand: str = "",
     metric: str = "overall",
 ):
-    from utils.mlb_data import get_pitcher_statcast
-    from utils.sequence_calc import prepare_statcast_df, analyze_pitch_sequences, create_sequence_chart_bytes
-
-    rows = get_pitcher_statcast(int(pitcher_id))
-    if not rows:
-        return Response(status_code=404)
-
-    df = prepare_statcast_df(rows)
-    hand = batter_hand.upper() if batter_hand in ("R", "L") else None
-    sequences_df = analyze_pitch_sequences(
-        df, pitcher_name="", min_sample_size=15, success_metric=metric, batter_hand=hand
-    )
-
-    if sequences_df.empty:
-        return Response(status_code=404)
-
     try:
+        from utils.mlb_data import get_pitcher_statcast
+        from utils.sequence_calc import prepare_statcast_df, analyze_pitch_sequences, create_sequence_chart_bytes
+
+        rows = get_pitcher_statcast(int(pitcher_id))
+        if not rows:
+            return Response(status_code=404)
+
+        df = prepare_statcast_df(rows)
+        hand = batter_hand.upper() if batter_hand in ("R", "L") else None
+        sequences_df = analyze_pitch_sequences(
+            df, pitcher_name="", min_sample_size=15, success_metric=metric, batter_hand=hand
+        )
+
+        if sequences_df.empty:
+            return Response(status_code=404)
+
         png_bytes = create_sequence_chart_bytes(sequences_df, pitcher_name="", batter_hand=hand)
         return Response(content=png_bytes.getvalue(), media_type="image/png")
     except Exception as exc:

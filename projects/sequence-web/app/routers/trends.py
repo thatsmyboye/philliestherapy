@@ -57,18 +57,18 @@ async def trends_search(
     player_name: str = Form(...),
     days: int = Form(14),
 ):
-    from utils.player_lookup import resolve_player
-    from utils.mlb_data import fetch_statcast_for_range, PITCH_TYPE_LABELS
-    from cogs.trends import (
-        _compute_hitter_metrics, _compute_pitcher_metrics,
-        _find_hitter_trends, _find_pitcher_trends,
-        _HITTER_META, _PITCHER_META,
-    )
-
     error = None
     result = None
 
     try:
+        from utils.player_lookup import resolve_player
+        from utils.mlb_data import fetch_statcast_for_range, PITCH_TYPE_LABELS
+        from cogs.trends import (
+            _compute_hitter_metrics, _compute_pitcher_metrics,
+            _find_hitter_trends, _find_pitcher_trends,
+            _HITTER_META, _PITCHER_META,
+        )
+
         # Try pitcher first, fall back to hitter, then generic
         player_id, resolved_name, _ = resolve_player(player_name, require_pitcher=True)
         is_pitcher = player_id is not None

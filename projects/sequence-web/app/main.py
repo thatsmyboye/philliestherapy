@@ -2,8 +2,16 @@ import sys
 import os
 from pathlib import Path
 
-# Make bot utilities importable
-BOT_ROOT = Path(__file__).resolve().parents[2] / "phillies-bot"
+# Make bot utilities importable.
+# BOT_ROOT env var allows overriding the path in deployment environments where
+# only the sequence-web subdirectory is deployed (e.g. monorepo buildpacks).
+_env_root = os.environ.get("BOT_ROOT")
+if _env_root:
+    BOT_ROOT = Path(_env_root)
+else:
+    # Default: projects/sequence-web/app/main.py → parents[2] = projects/
+    BOT_ROOT = Path(__file__).resolve().parents[2] / "phillies-bot"
+
 sys.path.insert(0, str(BOT_ROOT))
 
 from fastapi import FastAPI

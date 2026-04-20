@@ -19,7 +19,7 @@ try:
     from datetime import date as _date
     from .formatter import build_leaderboard_embed, build_league_embed
     _DISCORD_AVAILABLE = True
-except ImportError:
+except Exception:
     _DISCORD_AVAILABLE = False
 
 if _DISCORD_AVAILABLE:

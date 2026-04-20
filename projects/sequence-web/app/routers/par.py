@@ -1,14 +1,14 @@
-import sys
-import os
+import logging
 import threading
 from pathlib import Path
-from typing import AsyncGenerator
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from app.services.live import sse_generator, broadcast
+
+log = logging.getLogger("par")
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parents[1] / "templates")
@@ -23,8 +23,12 @@ def _lb():
     if _leaderboard is None:
         with _leaderboard_lock:
             if _leaderboard is None:
-                from cogs.spgrader.leaderboard import Leaderboard
-                _leaderboard = Leaderboard()
+                try:
+                    from cogs.spgrader.leaderboard import Leaderboard
+                    _leaderboard = Leaderboard()
+                except Exception:
+                    log.error("Leaderboard init failed", exc_info=True)
+                    return None
     return _leaderboard
 
 
@@ -36,8 +40,8 @@ def _grade_css(grade: str) -> str:
 @router.get("/par/", response_class=HTMLResponse)
 async def par_leaderboard(request: Request, n: int = 25):
     lb = _lb()
-    season_leaders = lb.top_averages(n=n, min_games=1)
-    top_games = lb.top_individual(n=10)
+    season_leaders = lb.top_averages(n=n, min_games=1) if lb else []
+    top_games = lb.top_individual(n=10) if lb else []
 
     # Enrich with grade CSS class
     for entry in season_leaders:
@@ -88,7 +92,7 @@ async def par_stream():
 async def par_player(request: Request, pitcher_id: int):
     lb = _lb()
     all_records = [
-        r for r in lb._records
+        r for r in (lb._records if lb else [])
         if r.pitcher_id == pitcher_id and not r.is_spring_training
     ]
     all_records.sort(key=lambda r: r.game_date, reverse=True)
