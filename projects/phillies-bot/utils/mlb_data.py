@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import csv
 import io
-import time
 import urllib.error
 import urllib.request
 from collections import defaultdict
@@ -85,21 +84,9 @@ def is_early_regular_season(days: int = 28) -> bool:
 SEASON_START = SPRING_TRAINING_START
 
 # ---------------------------------------------------------------------------
-# Simple TTL cache
+# TTL cache (Redis-backed with in-memory fallback)
 # ---------------------------------------------------------------------------
-_cache: dict[str, tuple[float, Any]] = {}
-
-
-def _cache_get(key: str, ttl_seconds: int) -> Optional[Any]:
-    if key in _cache:
-        ts, val = _cache[key]
-        if time.time() - ts < ttl_seconds:
-            return val
-    return None
-
-
-def _cache_set(key: str, value: Any) -> None:
-    _cache[key] = (time.time(), value)
+from utils.redis_cache import cache_get as _cache_get, cache_set as _cache_set
 
 
 # ---------------------------------------------------------------------------
