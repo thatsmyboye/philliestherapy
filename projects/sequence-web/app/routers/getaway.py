@@ -23,14 +23,14 @@ async def getaway_search(
     request: Request,
     pitcher_name: str = Form(...),
 ):
-    from utils.player_lookup import resolve_player
-    from utils.mlb_data import get_pitcher_statcast, PITCH_TYPE_LABELS
-    from cogs.getaway import _analyze_getaway, _grade
-
     error = None
     result = None
 
     try:
+        from utils.player_lookup import resolve_player
+        from utils.mlb_data import get_pitcher_statcast, PITCH_TYPE_LABELS
+        from cogs.getaway import _analyze_getaway, _grade
+
         player_id, resolved_name, lookup_err = resolve_player(pitcher_name, require_pitcher=True)
         if player_id is None:
             raise ValueError(lookup_err or f"Could not find pitcher '{pitcher_name}'")
