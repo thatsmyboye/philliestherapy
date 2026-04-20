@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Request
@@ -5,6 +6,8 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from app.services.live import sse_generator
+
+log = logging.getLogger("steal")
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parents[1] / "templates")
@@ -47,9 +50,10 @@ async def steal_leaderboard(request: Request):
     try:
         rows = _load_steal_leaderboard()
         error = None
-    except Exception as exc:
+    except Exception:
+        log.error("Steal leaderboard load failed", exc_info=True)
         rows = []
-        error = str(exc)
+        error = "Leaderboard data temporarily unavailable."
 
     return templates.TemplateResponse(request, "steal/index.html", {
         "active_nav": "steal",
