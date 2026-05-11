@@ -34,6 +34,7 @@ _BINGO_DEFAULT: dict = {
 _SCORES_DEFAULT: dict = {
     "season": 0,
     "scores": {},  # user_id_str → {total_points, games_played, wins, history}
+    "_applied_bonuses": [],  # idempotency keys for one-time score adjustments
 }
 
 
@@ -272,6 +273,29 @@ class ScoresStore:
         if place == 1:
             entry["wins"] += 1
         entry["history"].append({"date": date_str, "place": place, "points": points})
+        self.save()
+
+    def apply_one_time_bonus(self, year: int, bonus_id: str, user_id: str, points: int) -> None:
+        """Add points once per bonus_id (Phillies scores file only)."""
+        self.ensure_current_season(year)
+        applied = self._data.setdefault("_applied_bonuses", [])
+        if bonus_id in applied:
+            return
+        uid = str(user_id)
+        entry = self._data["scores"].setdefault(uid, {
+            "total_points": 0,
+            "games_played": 0,
+            "wins": 0,
+            "history": [],
+        })
+        entry["total_points"] += points
+        entry["history"].append({
+            "date": "__bonus__",
+            "place": 0,
+            "points": points,
+            "bonus_id": bonus_id,
+        })
+        applied.append(bonus_id)
         self.save()
 
     # ── Queries ──────────────────────────────────────────────────────────────

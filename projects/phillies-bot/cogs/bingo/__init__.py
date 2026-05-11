@@ -8,8 +8,8 @@ Commands (channel-routed):
   /bingo key         — Glossary of board symbols and event abbreviations (ephemeral)
 
 The bot routes each command to the correct game variant based on the channel:
-  BINGO_CHANNEL_ID       → Phillies bingo (Phillies-only events, roster-assigned squares)
-  OTHER_BINGO_CHANNEL_ID → League bingo   (all non-Phillies games, all-"Any" squares)
+  BINGO_CHANNEL_ID       → Phillies bingo (4×4, no free square; Phillies-only events)
+  OTHER_BINGO_CHANNEL_ID → League bingo   (5×5 + free center; all non-Phillies games)
 
 Background tasks poll live game data every 30 seconds per variant, mark squares,
 detect bingo wins, and post public announcements to the respective channel.
@@ -46,7 +46,7 @@ from .events import (
     draw_daily_pool,
     draw_daily_pool_league,
     pick_win_type,
-    WIN_TYPE_LABELS,
+    win_type_label_for_grid,
 )
 from .formatter import (
     make_join_confirm_embed,
@@ -66,6 +66,11 @@ _DATA_DIR = Path(__file__).parent.parent.parent / "data"
 LEAGUE_BINGO_PATH = _DATA_DIR / "bingo_league.json"
 LEAGUE_SCORES_PATH = _DATA_DIR / "bingo_scores_league.json"
 
+# One-time Phillies season score adjustment (idempotent via ScoresStore.apply_one_time_bonus)
+_PHILLIES_SCORE_BONUS_USER = "190637483048960000"
+_PHILLIES_SCORE_BONUS_AMOUNT = 8
+_PHILLIES_SCORE_BONUS_ID = "phillies_bingo_bonus_8pts_190637483048960000_a9b4"
+
 
 class BingoCog(commands.Cog, name="Bingo"):
     def __init__(self, bot: commands.Bot) -> None:
@@ -80,6 +85,13 @@ class BingoCog(commands.Cog, name="Bingo"):
         self._other_channel_id: int = int(os.environ.get("OTHER_BINGO_CHANNEL_ID", 0) or 0)
         self._league_store = BingoStore(LEAGUE_BINGO_PATH)
         self._league_scores = ScoresStore(LEAGUE_SCORES_PATH)
+
+        self._scores.apply_one_time_bonus(
+            date.today().year,
+            _PHILLIES_SCORE_BONUS_ID,
+            _PHILLIES_SCORE_BONUS_USER,
+            _PHILLIES_SCORE_BONUS_AMOUNT,
+        )
 
         # Track dates for which the pre-game reminder has already been sent
         self._phillies_reminder_sent: Optional[str] = None  # ISO date string
@@ -202,12 +214,22 @@ class BingoCog(commands.Cog, name="Bingo"):
                 return
             # Perform the re-roll with a distinct seed
             pool = store.event_pool
-            new_layout = generate_layout(len(pool), f"{uid}:{today}:reroll")
+            if variant == "phillies":
+                new_layout = generate_layout(
+                    len(pool), f"{uid}:{today}:reroll", grid_size=4, free_center=False,
+                )
+            else:
+                new_layout = generate_layout(len(pool), f"{uid}:{today}:reroll")
             store.reroll_player(uid, new_layout)
             scores.ensure_current_season(date.today().year)
             variant_label = "League" if variant == "league" else "Phillies"
-            win_label = WIN_TYPE_LABELS.get(store.win_type, store.win_type)
-            embed = make_join_confirm_embed(store.win_type, pool, today, variant_label)
+            grid_sz = 4 if variant == "phillies" else 5
+            win_label = win_type_label_for_grid(store.win_type, grid_sz)
+            embed = make_join_confirm_embed(
+                store.win_type, pool, today, variant_label,
+                grid_size=grid_sz,
+                has_free_center=variant != "phillies",
+            )
             embed.title = f"🔄 Board Re-rolled — {variant_label} Bingo!"
             embed.description = (
                 f"Your board has been re-rolled for **{today}**.\n"
@@ -219,7 +241,10 @@ class BingoCog(commands.Cog, name="Bingo"):
             return
 
         pool = store.event_pool
-        layout = generate_layout(len(pool), f"{uid}:{today}")
+        if variant == "phillies":
+            layout = generate_layout(len(pool), f"{uid}:{today}", grid_size=4, free_center=False)
+        else:
+            layout = generate_layout(len(pool), f"{uid}:{today}")
         store.add_player(uid, layout)
 
         # Check immediately in case events have already fired (late joiner)
@@ -230,7 +255,12 @@ class BingoCog(commands.Cog, name="Bingo"):
 
         scores.ensure_current_season(date.today().year)
         variant_label = "League" if variant == "league" else "Phillies"
-        embed = make_join_confirm_embed(store.win_type, pool, today, variant_label)
+        grid_sz = 4 if variant == "phillies" else 5
+        embed = make_join_confirm_embed(
+            store.win_type, pool, today, variant_label,
+            grid_size=grid_sz,
+            has_free_center=variant != "phillies",
+        )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     # /bingo check ────────────────────────────────────────────────────────────
@@ -284,6 +314,7 @@ class BingoCog(commands.Cog, name="Bingo"):
             display_name=display_name,
             win_type=store.win_type,
             bingo_achieved=player.get("bingo", False),
+            free_center=len(player["layout"]) == 5,
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -659,7 +690,8 @@ class BingoCog(commands.Cog, name="Bingo"):
         pool = store.event_pool
         marked = store.get_marked_set()
         layout = player["layout"]
-        marked_grid = build_marked_grid(layout, pool, marked)
+        free_center = len(layout) == 5
+        marked_grid = build_marked_grid(layout, pool, marked, free_center=free_center)
 
         if not check_win(marked_grid, store.win_type):
             return
@@ -705,6 +737,7 @@ class BingoCog(commands.Cog, name="Bingo"):
             win_type=store.win_type,
             game_date=today,
             variant_label=variant_label,
+            grid_size=len(layout),
         )
         try:
             await channel.send(embed=embed)
