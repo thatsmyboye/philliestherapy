@@ -16,7 +16,7 @@ from typing import Optional
 
 import discord
 
-from .events import WIN_TYPE_LABELS, EVENT_BASE_LABEL
+from .events import EVENT_BASE_LABEL, win_type_label_for_grid
 
 _PLACE_MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
 _PLACE_SUFFIXES = {1: "st", 2: "nd", 3: "rd"}
@@ -36,18 +36,31 @@ def make_join_confirm_embed(
     event_pool: list[dict],
     game_date: str,
     variant_label: str = "Phillies",
+    *,
+    grid_size: int = 5,
+    has_free_center: bool = True,
 ) -> discord.Embed:
     """
     Ephemeral embed sent back to a player after /bingo join.
     Shows today's win type and a preview list of the day's events.
     """
-    win_label = WIN_TYPE_LABELS.get(win_type, win_type)
+    win_label = win_type_label_for_grid(win_type, grid_size)
+    if grid_size == 4 and not has_free_center:
+        board_blurb = (
+            f"Your personal **4×4** board (no free square) has been generated for **{game_date}**.\n"
+            "Squares will be marked automatically as events occur in today's game."
+        )
+    else:
+        board_blurb = (
+            f"Your personal **5×5** board has been generated for **{game_date}**.\n"
+            "Squares will be marked automatically as events occur in today's game.\n"
+            "The center square is **FREE** (always marked)."
+        )
 
     embed = discord.Embed(
         title=f"🎱 You're in — {variant_label} Bingo!",
         description=(
-            f"Your personal 5×5 board has been generated for **{game_date}**.\n"
-            "Squares will be marked automatically as events occur in today's game.\n\n"
+            f"{board_blurb}\n\n"
             f"**Today's win condition:** {win_label}\n\n"
             "Use `/bingo check` anytime to see your current board."
         ),
@@ -127,12 +140,14 @@ def make_win_announcement_embed(
     win_type: str,
     game_date: str,
     variant_label: str = "Phillies",
+    *,
+    grid_size: int = 5,
 ) -> discord.Embed:
     """
     Public embed posted to the bingo channel when a player achieves bingo.
     """
     medal = _PLACE_MEDALS.get(place, "🎉")
-    win_label = WIN_TYPE_LABELS.get(win_type, win_type)
+    win_label = win_type_label_for_grid(win_type, grid_size)
     place_label = _place_str(place)
 
     embed = discord.Embed(
@@ -162,7 +177,12 @@ def make_key_embed() -> discord.Embed:
 
     embed.add_field(
         name="Symbols",
-        value="✅  Square marked\n⬜  Not yet marked\n⭐  FREE (always marked)",
+        value=(
+            "✅  Square marked\n"
+            "⬜  Not yet marked\n"
+            "⭐  FREE (League 5×5 only — always marked)\n"
+            "Phillies boards are 4×4 with no free square."
+        ),
         inline=False,
     )
 

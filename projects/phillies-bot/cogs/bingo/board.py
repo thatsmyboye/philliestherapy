@@ -1,9 +1,8 @@
 """
-Board generation and rendering for Phillies Bingo.
+Board generation and rendering for Phillies and League Bingo.
 
-Each player gets a unique 5×5 layout — same 24 pool squares as everyone else
-but shuffled into a personal arrangement.  The center cell [2][2] is always
-FREE (stored as index -1).
+Phillies: 4×4 layout, 16 pool squares, no free space.
+League:   5×5 layout, 24 pool squares, center cell FREE (index -1).
 """
 from __future__ import annotations
 
@@ -11,34 +10,50 @@ import random
 
 import discord
 
-from .events import make_fingerprint, WIN_TYPE_LABELS
+from .events import win_type_label_for_grid
 from .win_checker import build_marked_grid
 
 # Column width for the board code-block (monospace alignment).
-# 5 chars × 5 columns = 25 chars total — fits comfortably inside Discord
-# mobile's code-block width (~28 display chars on iPhone 15).
 # Each cell: emoji (2 display units) + 3 spaces = 5 display units.
 _COL_W = 5
 
+_HEADER_LETTERS = ["B", "I", "N", "G", "O"]
 
-def generate_layout(pool_size: int, user_seed: str) -> list[list[int]]:
+
+def generate_layout(
+    pool_size: int,
+    user_seed: str,
+    *,
+    grid_size: int = 5,
+    free_center: bool = True,
+) -> list[list[int]]:
     """
-    Shuffle pool indices 0..(pool_size-1) into a unique 5×5 grid for a player.
+    Shuffle pool indices into a grid_size×grid_size grid for a player.
 
-    The center position [2][2] is always -1 (FREE).
-    user_seed should be f"{user_id}:{game_date}" for per-player reproducibility.
+    When free_center is True (League), the center holds -1 (FREE) and
+    pool_size must be grid_size² − 1. When False (Phillies 4×4),
+    pool_size must equal grid_size².
 
-    Returns a 5×5 list of lists of int (pool indices or -1).
+    user_seed should be f"{user_id}:{game_date}" (or with :reroll) for stable draws.
     """
-    assert pool_size == 24, "Pool must contain exactly 24 squares."
+    if free_center:
+        expected = grid_size * grid_size - 1
+        if pool_size != expected:
+            raise ValueError(f"Pool must have {expected} squares when using a FREE center.")
+        rng = random.Random(user_seed)
+        indices = list(range(pool_size))
+        rng.shuffle(indices)
+        mid = (grid_size * grid_size) // 2
+        cells: list[int] = indices[:mid] + [-1] + indices[mid:]
+        return [cells[r * grid_size:(r + 1) * grid_size] for r in range(grid_size)]
+
+    expected = grid_size * grid_size
+    if pool_size != expected:
+        raise ValueError(f"Pool must have {expected} squares for a full grid with no FREE cell.")
     rng = random.Random(user_seed)
     indices = list(range(pool_size))
     rng.shuffle(indices)
-
-    # Build flat 25-cell list: insert FREE (-1) at center position 12
-    cells: list[int] = indices[:12] + [-1] + indices[12:]
-    # Reshape into 5×5
-    return [cells[r * 5:(r + 1) * 5] for r in range(5)]
+    return [indices[r * grid_size:(r + 1) * grid_size] for r in range(grid_size)]
 
 
 def render_board_embed(
@@ -48,15 +63,14 @@ def render_board_embed(
     display_name: str,
     win_type: str,
     bingo_achieved: bool,
+    *,
+    free_center: bool = True,
 ) -> discord.Embed:
     """
     Build the ephemeral board embed shown by /bingo check.
-
-    Layout uses a monospace code block with two lines per board row:
-      Line 1 — status symbols: ✅  ⬜  ⭐  ⬜  ✅
-      Line 2 — cell labels:    TuHR ~BB FREE ~DP ScCS
     """
-    win_label = WIN_TYPE_LABELS.get(win_type, win_type)
+    n = len(layout)
+    win_label = win_type_label_for_grid(win_type, n)
 
     if bingo_achieved:
         title = f"🎉 {display_name}'s Bingo Board — BINGO!"
@@ -65,18 +79,19 @@ def render_board_embed(
         title = f"🎱 {display_name}'s Bingo Board"
         colour = discord.Colour.red()
 
-    marked_grid = build_marked_grid(layout, pool_squares, marked_fingerprints)
+    marked_grid = build_marked_grid(
+        layout, pool_squares, marked_fingerprints, free_center=free_center,
+    )
 
     lines: list[str] = []
-    # Header
-    header = "".join(c.ljust(_COL_W) for c in ["B", "I", "N", "G", "O"])
+    header = "".join(c.ljust(_COL_W) for c in _HEADER_LETTERS[:n])
     lines.append(header)
     lines.append("")
 
-    for r in range(5):
+    for r in range(n):
         symbol_row: list[str] = []
         label_row: list[str] = []
-        for c in range(5):
+        for c in range(n):
             idx = layout[r][c]
             is_marked = marked_grid[r][c]
 
@@ -90,8 +105,6 @@ def render_board_embed(
                 sym = "⬜"
                 lbl = pool_squares[idx]["label"]
 
-            # Emoji are 2 monospace units wide; pad with _COL_W-2 spaces so
-            # the symbol row aligns with the label row below it.
             symbol_row.append(sym + " " * (_COL_W - 2))
             label_row.append(lbl.ljust(_COL_W))
 
@@ -101,8 +114,8 @@ def render_board_embed(
 
     board_text = "```\n" + "\n".join(lines).rstrip() + "\n```"
 
-    # Count marked squares (FREE always counts)
-    total_marked = sum(marked_grid[r][c] for r in range(5) for c in range(5))
+    total_cells = n * n
+    total_marked = sum(marked_grid[r][c] for r in range(n) for c in range(n))
 
     embed = discord.Embed(
         title=title,
@@ -110,6 +123,6 @@ def render_board_embed(
         colour=colour,
     )
     embed.add_field(name="Win Type", value=win_label, inline=True)
-    embed.add_field(name="Squares Marked", value=f"{total_marked}/25", inline=True)
+    embed.add_field(name="Squares Marked", value=f"{total_marked}/{total_cells}", inline=True)
 
     return embed

@@ -23,7 +23,7 @@ BATTER = "BATTER"
 PITCHER = "PITCHER"
 GAME = "GAME"
 
-# Full pool of event IDs — 26 total; draw 24 per game day
+# Full pool of event IDs — 26 total; Phillies draws 16 per day, League draws 24
 EVENT_POOL_IDS: list[str] = [
     # BATTER events (14)
     "HR", "DOUBLE", "TRIPLE",
@@ -129,11 +129,22 @@ def make_label(event_id: str, player_name: str) -> str:
 
 def draw_daily_pool(game_date: str) -> list[str]:
     """
-    Randomly draw 24 event IDs from EVENT_POOL_IDS for the given game date.
+    Randomly draw 16 event IDs from EVENT_POOL_IDS for Phillies Bingo (4×4 board).
+
     Deterministic: same date always yields the same draw.
     """
     rng = random.Random(game_date)
-    return rng.sample(EVENT_POOL_IDS, 24)
+    return rng.sample(EVENT_POOL_IDS, 16)
+
+
+def win_type_label_for_grid(win_type: str, grid_size: int) -> str:
+    """Human-readable win condition text; adjusts cell counts for board size."""
+    if win_type == "blackout":
+        return f"Blackout (all {grid_size * grid_size} squares)"
+    if win_type == "outside_edges":
+        perimeter = 4 * grid_size - 4
+        return f"Outside Edges (all {perimeter} perimeter squares)"
+    return WIN_TYPE_LABELS.get(win_type, win_type)
 
 
 def draw_daily_pool_league(game_date: str) -> list[str]:
@@ -158,7 +169,7 @@ def assign_players_to_pool(
     roster: list[dict],
 ) -> list[dict]:
     """
-    Build the full list of 24 square dicts for the Phillies bingo variant.
+    Build the full list of 16 square dicts for the Phillies bingo variant.
 
     Each square is:
       {event_id, player_id, player_name, label, category}
