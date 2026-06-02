@@ -70,7 +70,10 @@ class MLBClient:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=30),
-                headers={"User-Agent": "PhilliesTherapyBot/1.0"}
+                headers={
+                    "User-Agent": "PhilliesTherapyBot/1.0",
+                    "Accept": "application/json",
+                }
             )
         return self._session
 
