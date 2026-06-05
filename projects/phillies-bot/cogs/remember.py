@@ -4,12 +4,13 @@ Cog: /remember slash command.
 Pulls a random Philadelphia Phillies player from a given season (or a random
 season if none is specified) and shows their stats for that year.
 
-  /remember          → picks a random year from 1883–2025
+  /remember           → picks a random year from 1883–current
   /remember year:1980 → shows a random player from the 1980 Phillies
 """
 from __future__ import annotations
 
 import random
+from datetime import datetime
 from typing import Optional
 
 import discord
@@ -26,7 +27,7 @@ PHILLIES_RED = 0xE81828
 PHILLIES_BLUE = 0x003087
 
 PHILLIES_FIRST_SEASON = 1883
-PHILLIES_LAST_SEASON = 2025
+PHILLIES_LAST_SEASON = datetime.now().year
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +142,7 @@ class RememberCog(commands.Cog, name="Remember"):
         description="Honor a random Phillies player from history (or a specific season).",
     )
     @app_commands.describe(
-        year="Season year (1883–2025). Leave blank for a random year.",
+        year=f"Season year (1883–{PHILLIES_LAST_SEASON}). Leave blank for a random year.",
     )
     async def remember(
         self,

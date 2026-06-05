@@ -360,7 +360,7 @@ class MonitorCog(commands.Cog, name="Monitor"):
             )
             season_stats = {}
             for group in data.get("stats", []):
-                if group.get("group", {}).get("displayName", "").lower() == "hitting":
+                if group.get("group", "").lower() == "hitting":
                     season_stats = group.get("stats", {})
                     break
         except Exception:
@@ -390,7 +390,7 @@ class MonitorCog(commands.Cog, name="Monitor"):
             )
             season_stats = {}
             for group in data.get("stats", []):
-                if group.get("group", {}).get("displayName", "").lower() == "pitching":
+                if group.get("group", "").lower() == "pitching":
                     season_stats = group.get("stats", {})
                     break
         except Exception:
