@@ -11,7 +11,12 @@ from datetime import date
 from urllib.parse import urlencode
 from typing import Optional
 
-from curl_cffi import requests as _cffi
+try:
+    from curl_cffi import requests as _cffi
+    _HAS_CFFI = True
+except ImportError:
+    _cffi = None
+    _HAS_CFFI = False
 
 log = logging.getLogger("mlb_api")
 
@@ -79,6 +84,8 @@ class MLBClient:
     @staticmethod
     def _cffi_fetch(url: str) -> dict:
         """Fetch via curl_cffi impersonating Chrome — bypasses Akamai JA3 fingerprint block."""
+        if not _HAS_CFFI:
+            raise RuntimeError("curl_cffi is not installed. Run: pip install curl_cffi>=0.7.0")
         resp = _cffi.get(url, impersonate="chrome124", timeout=30)
         resp.raise_for_status()
         return resp.json()
