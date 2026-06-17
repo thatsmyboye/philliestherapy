@@ -10,6 +10,8 @@ import math
 from datetime import date
 from typing import Optional
 
+import statsapi
+
 log = logging.getLogger("mlb_api")
 
 BASE = "https://statsapi.mlb.com/api/v1"
@@ -70,10 +72,6 @@ class MLBClient:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=30),
-                headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; PhilliesTherapyBot/1.0)",
-                    "Accept": "application/json, text/plain, */*",
-                }
             )
         return self._session
 
@@ -93,15 +91,16 @@ class MLBClient:
         """Return today's (or given date's) games for a team."""
         if game_date is None:
             game_date = date.today().isoformat()
-        data = await self.get(
-            f"{BASE}/schedule",
-            params={
+        data = await asyncio.to_thread(
+            statsapi.get,
+            "schedule",
+            {
                 "sportId": 1,
                 "teamId": team_id,
                 "date": game_date,
                 "gameType": "S,R",
                 "hydrate": "linescore,decisions,pitchers",
-            }
+            },
         )
         games = []
         for date_entry in data.get("dates", []):
@@ -187,14 +186,15 @@ class MLBClient:
           name, team, ip, k, bb, er, h, pitches, win, loss
         Only includes pitchers who recorded at least 1 out.
         """
-        data = await self.get(
-            f"{BASE}/schedule",
-            params={
+        data = await asyncio.to_thread(
+            statsapi.get,
+            "schedule",
+            {
                 "sportId": 1,
                 "date": game_date,
                 "gameType": "R",
                 "hydrate": "boxscore,pitchers,decisions",
-            }
+            },
         )
 
         starters = []
