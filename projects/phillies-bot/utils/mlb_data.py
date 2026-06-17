@@ -628,15 +628,22 @@ def get_todays_non_phillies_games() -> list[dict]:
     """
     Return today's MLB games that do NOT involve the Phillies (team 143).
     Fetches the full schedule and filters out any game where either team is PHI.
+    Cached for 90 seconds to avoid hammering the API on every 30-second monitor tick.
     """
+    cache_key = f"non_phillies_schedule_{date.today().isoformat()}"
+    cached = _cache_get(cache_key, 90)
+    if cached is not None:
+        return cached
     try:
         today = date.today().strftime("%Y-%m-%d")
         all_games = statsapi.schedule(date=today, sportId=1)
-        return [
+        result = [
             g for g in all_games
             if g.get("away_id") != PHILLIES_TEAM_ID
             and g.get("home_id") != PHILLIES_TEAM_ID
         ]
+        _cache_set(cache_key, result)
+        return result
     except Exception:
         return []
 

@@ -219,6 +219,12 @@ if _DISCORD_AVAILABLE:
         )
         @app_commands.describe(date="Date to backfill (YYYY-MM-DD)")
         async def backfill(self, interaction: discord.Interaction, date: str) -> None:
+            # DISABLED — command temporarily hidden
+            await interaction.response.send_message(
+                "This command is currently unavailable.", ephemeral=True
+            )
+            return
+
             await interaction.response.defer(ephemeral=True)
 
             app_info = await self.bot.application_info()

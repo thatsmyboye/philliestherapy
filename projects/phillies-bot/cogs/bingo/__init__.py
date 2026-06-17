@@ -61,6 +61,9 @@ from .win_checker import build_marked_grid, check_win
 # Game statuses that mean the game is finished for today
 _TERMINAL_STATUSES = {"Final", "Game Over", "Completed Early", "Postponed", "Cancelled"}
 
+# Game statuses that mean the game hasn't started yet
+_PREGAME_STATUSES = {"Scheduled", "Pre-Game", "Warmup"}
+
 # Storage paths for the league variant
 _DATA_DIR = Path(__file__).parent.parent.parent / "data"
 LEAGUE_BINGO_PATH = _DATA_DIR / "bingo_league.json"
@@ -92,6 +95,11 @@ class BingoCog(commands.Cog, name="Bingo"):
             _PHILLIES_SCORE_BONUS_USER,
             _PHILLIES_SCORE_BONUS_AMOUNT,
         )
+
+        if not self._channel_id:
+            print("[bingo] WARNING: BINGO_CHANNEL_ID is not set — Phillies win announcements will not be posted.")
+        if not self._other_channel_id:
+            print("[bingo] WARNING: OTHER_BINGO_CHANNEL_ID is not set — League win announcements will not be posted.")
 
         # Track dates for which the pre-game reminder has already been sent
         self._phillies_reminder_sent: Optional[str] = None  # ISO date string
@@ -403,7 +411,8 @@ class BingoCog(commands.Cog, name="Bingo"):
         if not self._store.players:
             return  # no one has joined yet
 
-        live_games = [g for g in games if g.get("status") == "In Progress"]
+        _not_started = _TERMINAL_STATUSES | _PREGAME_STATUSES
+        live_games = [g for g in games if g.get("status") not in _not_started]
         terminal_games = [g for g in games if g.get("status") in _TERMINAL_STATUSES]
 
         for game in live_games:
@@ -449,7 +458,8 @@ class BingoCog(commands.Cog, name="Bingo"):
         if not self._league_store.players:
             return  # no one has joined yet
 
-        live_games = [g for g in games if g.get("status") == "In Progress"]
+        _not_started = _TERMINAL_STATUSES | _PREGAME_STATUSES
+        live_games = [g for g in games if g.get("status") not in _not_started]
         terminal_games = [g for g in games if g.get("status") in _TERMINAL_STATUSES]
 
         for game in live_games:
@@ -740,7 +750,7 @@ class BingoCog(commands.Cog, name="Bingo"):
             grid_size=len(layout),
         )
         try:
-            await channel.send(embed=embed)
+            await channel.send(content=f"<@{user_id}>", embed=embed)
             print(f"[bingo] Win announcement posted for {user_id} in channel {announce_channel_id}.")
         except discord.HTTPException as exc:
             print(f"[bingo] Failed to post win announcement: {exc}")

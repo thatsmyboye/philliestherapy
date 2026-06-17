@@ -416,6 +416,11 @@ class StealMonitorCog(commands.Cog, name="StealMonitor"):
         description="Season leaderboard of base stealers ranked by difficulty-weighted success rate",
     )
     async def steal_grades(self, interaction: discord.Interaction) -> None:
+        # DISABLED — command temporarily hidden
+        await interaction.response.send_message(
+            "This command is currently unavailable.", ephemeral=True
+        )
+        return
         await interaction.response.defer()
         grades = state_store.get_steal_grades(self._state)
 
