@@ -5,12 +5,12 @@ All endpoints are public — no auth required.
 
 import asyncio
 import aiohttp
+import json as _json
 import logging
 import math
 from datetime import date
+from urllib.parse import urlencode
 from typing import Optional
-
-import statsapi
 
 log = logging.getLogger("mlb_api")
 
@@ -75,11 +75,25 @@ class MLBClient:
             )
         return self._session
 
+    _CURL_HEADERS = [
+        "-H", "Accept: application/json",
+        "-H", "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    ]
+
+    async def _curl_fetch(self, url: str) -> dict:
+        """GET a URL via curl to bypass Python TLS fingerprinting block on MLB CDN."""
+        proc = await asyncio.create_subprocess_exec(
+            "curl", "-s", "--max-time", "30", *self._CURL_HEADERS, url,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        return _json.loads(stdout)
+
     async def get(self, url: str, params: dict = None) -> dict:
-        session = await self._get_session()
-        async with session.get(url, params=params) as resp:
-            resp.raise_for_status()
-            return await resp.json()
+        if params:
+            url = f"{url}?{urlencode(params)}"
+        return await self._curl_fetch(url)
 
     async def close(self):
         if self._session:
@@ -91,10 +105,9 @@ class MLBClient:
         """Return today's (or given date's) games for a team."""
         if game_date is None:
             game_date = date.today().isoformat()
-        data = await asyncio.to_thread(
-            statsapi.get,
-            "schedule",
-            {
+        data = await self.get(
+            f"{BASE}/schedule",
+            params={
                 "sportId": 1,
                 "teamId": team_id,
                 "date": game_date,
@@ -186,10 +199,9 @@ class MLBClient:
           name, team, ip, k, bb, er, h, pitches, win, loss
         Only includes pitchers who recorded at least 1 out.
         """
-        data = await asyncio.to_thread(
-            statsapi.get,
-            "schedule",
-            {
+        data = await self.get(
+            f"{BASE}/schedule",
+            params={
                 "sportId": 1,
                 "date": game_date,
                 "gameType": "R",
