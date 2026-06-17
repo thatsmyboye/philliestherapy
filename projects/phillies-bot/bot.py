@@ -38,13 +38,13 @@ COGS = [
     "cogs.standings",
     "cogs.spgrader",
     "cogs.trends",
-    "cogs.matchup",
+    # "cogs.matchup",       # DISABLED — /matchup command hidden
     "cogs.steal_monitor",
-    "cogs.getaway",
+    # "cogs.getaway",       # DISABLED — /getaway command hidden
     "cogs.props",
     "cogs.bingo",
     "cogs.remember",
-    "cogs.sequence",
+    # "cogs.sequence",      # DISABLED — /sequence command hidden
 ]
 
 
