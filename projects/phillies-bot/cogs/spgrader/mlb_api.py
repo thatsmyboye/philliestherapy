@@ -72,7 +72,7 @@ class MLBClient:
                 timeout=aiohttp.ClientTimeout(total=30),
                 headers={
                     "User-Agent": "Mozilla/5.0 (compatible; PhilliesTherapyBot/1.0)",
-                    "Accept": "*/*",
+                    "Accept": "application/json, text/plain, */*",
                 }
             )
         return self._session
