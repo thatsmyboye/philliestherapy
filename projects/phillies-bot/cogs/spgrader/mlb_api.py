@@ -5,15 +5,13 @@ All endpoints are public — no auth required.
 
 import asyncio
 import aiohttp
-import gzip as _gzip
-import json as _json
 import logging
 import math
-import urllib.request
-import urllib.error
 from datetime import date
 from urllib.parse import urlencode
 from typing import Optional
+
+from curl_cffi import requests as _cffi
 
 log = logging.getLogger("mlb_api")
 
@@ -78,30 +76,17 @@ class MLBClient:
             )
         return self._session
 
-    _MLB_HEADERS = {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Origin": "https://www.mlb.com",
-        "Referer": "https://www.mlb.com/",
-        "Connection": "keep-alive",
-    }
-
     @staticmethod
-    def _urllib_fetch(url: str) -> dict:
-        """Synchronous fetch using urllib with browser headers (runs in thread pool)."""
-        req = urllib.request.Request(url, headers=MLBClient._MLB_HEADERS)
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read()
-            encoding = resp.headers.get("Content-Encoding", "")
-            if encoding == "gzip":
-                raw = _gzip.decompress(raw)
-        return _json.loads(raw.decode("utf-8"))
+    def _cffi_fetch(url: str) -> dict:
+        """Fetch via curl_cffi impersonating Chrome — bypasses Akamai JA3 fingerprint block."""
+        resp = _cffi.get(url, impersonate="chrome124", timeout=30)
+        resp.raise_for_status()
+        return resp.json()
 
     async def get(self, url: str, params: dict = None) -> dict:
         if params:
             url = f"{url}?{urlencode(params)}"
-        return await asyncio.to_thread(self._urllib_fetch, url)
+        return await asyncio.to_thread(self._cffi_fetch, url)
 
     async def close(self):
         if self._session:
