@@ -1006,6 +1006,24 @@ def get_wildcard_standings() -> dict[str, list[dict]]:
 # Historical roster / stats helpers (for /remember)
 # ---------------------------------------------------------------------------
 
+def _fetch_json(url: str) -> dict:
+    """
+    Fetch a JSON URL via curl_cffi (Chrome impersonation) to bypass Akamai JA3
+    fingerprint blocks that cause 406 errors with plain requests/statsapi.
+    Falls back to urllib if curl_cffi is not installed.
+    """
+    try:
+        from curl_cffi import requests as _cffi
+        resp = _cffi.get(url, impersonate="chrome124", timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except ImportError:
+        import json as _json
+        import urllib.request as _ur
+        with _ur.urlopen(url, timeout=30) as r:
+            return _json.loads(r.read())
+
+
 def get_phillies_historical_roster(year: int) -> list[dict]:
     """
     Return the full-season roster for the Phillies in the given year (24-hour cache).
@@ -1017,15 +1035,23 @@ def get_phillies_historical_roster(year: int) -> list[dict]:
     if cached is not None:
         return cached
 
+    url = (
+        f"https://statsapi.mlb.com/api/v1/teams/{PHILLIES_TEAM_ID}/roster"
+        f"?rosterType=fullSeason&season={year}"
+    )
     try:
-        data = statsapi.get(
-            "team_roster",
-            {
-                "teamId": PHILLIES_TEAM_ID,
-                "rosterType": "fullSeason",
-                "season": year,
-            },
-        )
+        try:
+            data = statsapi.get(
+                "team_roster",
+                {
+                    "teamId": PHILLIES_TEAM_ID,
+                    "rosterType": "fullSeason",
+                    "season": year,
+                },
+            )
+        except Exception:
+            data = _fetch_json(url)
+
         players = []
         for entry in data.get("roster", []):
             position = entry.get("position", {}).get("abbreviation", "?")
@@ -1035,7 +1061,8 @@ def get_phillies_historical_roster(year: int) -> list[dict]:
                 "position": position,
                 "is_pitcher": position == "P",
             })
-        _cache_set(key, players)
+        if players:
+            _cache_set(key, players)
         return players
     except Exception:
         return []
@@ -1275,14 +1302,22 @@ def get_player_phillies_season_stats(player_id: int, year: int) -> dict:
     Result: {'hitting': {...}, 'pitching': {...}}
     Stats dicts are empty if the player had no appearances in that role.
     """
+    url = (
+        f"https://statsapi.mlb.com/api/v1/people/{player_id}"
+        f"?hydrate=stats(group=[hitting,pitching],type=yearByYear,sportId=1),currentTeam"
+    )
     try:
-        data = statsapi.get(
-            "person",
-            {
-                "personId": player_id,
-                "hydrate": "stats(group=[hitting,pitching],type=yearByYear,sportId=1),currentTeam",
-            },
-        )
+        try:
+            data = statsapi.get(
+                "person",
+                {
+                    "personId": player_id,
+                    "hydrate": "stats(group=[hitting,pitching],type=yearByYear,sportId=1),currentTeam",
+                },
+            )
+        except Exception:
+            data = _fetch_json(url)
+
         result: dict[str, dict] = {"hitting": {}, "pitching": {}}
         for stat_group in data.get("people", [{}])[0].get("stats", []):
             group_name = stat_group.get("group", {}).get("displayName", "").lower()
