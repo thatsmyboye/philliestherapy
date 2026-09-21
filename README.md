@@ -10,7 +10,7 @@ A feature-rich Discord bot for the Phillies Therapy server, built with discord.p
 **Features:**
 - **Velocity** — Pitch velocity analysis and fastball tracking
 - **Luck** — Phillies team performance luck metrics and analysis
-- **Monitor** — Posts new articles from The Athletic by watched authors
+- **Monitor** — Live game monitoring: milestone and career-high alerts
 - **Standings** — Live team standings and division updates
 - **SP Grader** — Starting pitcher performance grading with the PAR model (see below)
 
@@ -22,18 +22,22 @@ A feature-rich Discord bot for the Phillies Therapy server, built with discord.p
 ---
 
 ### 2. **phillies-monitor** — Athletic Articles RSS Monitor
-Automatically posts new Matt Gelb and Charlotte Varnes articles from The Athletic RSS feed to Discord via webhook. Runs free on GitHub Actions (every 15 minutes).
+Automatically posts new Matt Gelb and Charlotte Varnes articles from The Athletic to Discord via webhook. Runs free on GitHub Actions (every 15 minutes).
 
 **How it works:**
-1. **RSS polling** — queries the Phillies feed for new articles
-2. **Author extraction** — fetches each article page and extracts author from meta tags, JSON-LD, or HTML byline
-3. **Filtering** — posts only articles by watched authors
-4. **State tracking** — maintains `posted_articles.json` to avoid duplicates
+1. **RSS polling** — queries one per-author feed per watched writer
+   (`nytimes.com/athletic/rss/author/<slug>/`)
+2. **Co-byline merge** — a piece they wrote together appears in both feeds; it
+   posts once, credited to both
+3. **State tracking** — maintains `posted_articles.json` to avoid duplicates
+
+Because each feed belongs to one writer, the author is implied and no article
+page is ever fetched.
 
 **Setup:**
-1. Verify the RSS feed and author detection:
+1. Verify both author feeds are healthy:
    ```bash
-   pip install feedparser requests beautifulsoup4
+   pip install feedparser requests
    python projects/phillies-monitor/discover.py
    ```
 
@@ -45,6 +49,18 @@ Automatically posts new Matt Gelb and Charlotte Varnes articles from The Athleti
 
 **Customization:**
 Edit the `WATCHED_AUTHORS` dict in `monitor.py` to add or remove tracked authors.
+Keys are the author's URL slug as it appears in their Athletic author page
+(e.g. `matt-gelb`), not their display name.
+
+**Note on scraping:** an earlier version polled the Phillies team feed, which
+carries no author data, and fetched each article page to read the byline. In
+September 2026 NYT put DataDome bot protection in front of article pages;
+those fetches began returning a 403 challenge page, the byline lookup failed,
+and every article was quietly filed as "not a watched author" while the
+workflow still reported success. Two things prevent a silent repeat:
+a feed that errors or returns zero entries now **fails the workflow run**
+rather than looking like a quiet day, and the RSS endpoints themselves are not
+behind DataDome.
 
 ---
 
