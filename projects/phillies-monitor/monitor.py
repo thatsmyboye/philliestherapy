@@ -317,6 +317,7 @@ def run():
         state = migrate_state(state, articles)
 
     known = set(state["posted_ids"])
+    tracked_before = len(state["posted_ids"])
 
     # On a migration run the seeded state already covers the whole back
     # catalogue, so the age guard would only block the intended backfill.
@@ -338,7 +339,15 @@ def run():
             time.sleep(POST_DELAY)
 
     state["posted_ids"].extend(new_posted)
-    save_state(state)
+
+    # Only rewrite the state file when something actually changed. Bumping a
+    # timestamp on every run meant a commit and a push every 15 minutes, which
+    # is what makes the workflow's push race with itself.
+    if migrating or len(state["posted_ids"]) != tracked_before:
+        save_state(state)
+    else:
+        log.info("No change — leaving state file untouched")
+
     log.info(f"✅ Done. {len(new_posted)} posted.")
 
 
