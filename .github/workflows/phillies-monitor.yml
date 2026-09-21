@@ -33,6 +33,52 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add projects/phillies-monitor/posted_articles.json
-          git diff --cached --quiet || git commit -m "Update posted articles state"
-          git push
+
+          STATE=projects/phillies-monitor/posted_articles.json
+          cp "$STATE" "$RUNNER_TEMP/ours.json"
+
+          # A run that posts to Discord but fails to push its state would post
+          # the same articles again next time, so retry rather than give up.
+          # posted_ids is an append-only set, so rebasing onto whatever main
+          # holds now is just a union of the two lists.
+          for attempt in 1 2 3 4 5; do
+            git fetch --quiet origin main
+            git reset --quiet --hard origin/main
+
+            python3 - "$RUNNER_TEMP/ours.json" "$STATE" <<'EOF'
+          import json, sys
+          from pathlib import Path
+
+          ours = json.loads(Path(sys.argv[1]).read_text())
+          state = Path(sys.argv[2])
+          theirs = json.loads(state.read_text()) if state.exists() else {}
+
+          seen, merged = set(), []
+          for article_id in theirs.get("posted_ids", []) + ours.get("posted_ids", []):
+              if article_id not in seen:
+                  seen.add(article_id)
+                  merged.append(article_id)
+
+          ours["posted_ids"] = merged
+          state.write_text(json.dumps(ours, indent=2))
+          EOF
+
+            git add "$STATE"
+            if git diff --cached --quiet; then
+              echo "No state change to commit"
+              exit 0
+            fi
+
+            git commit --quiet -m "Update posted articles state"
+            if git push --quiet origin HEAD:main; then
+              echo "Pushed state (attempt $attempt)"
+              exit 0
+            fi
+
+            echo "Push rejected on attempt $attempt — main moved, merging and retrying"
+            sleep $((attempt * 2))
+          done
+
+          echo "::error::Could not push state after 5 attempts. Articles may have \
+          been posted to Discord without being recorded, which risks duplicates."
+          exit 1
