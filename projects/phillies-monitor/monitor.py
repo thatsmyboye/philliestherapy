@@ -1,30 +1,33 @@
 """
-Athletic Phillies RSS → Discord Webhook (with author lookup)
+Athletic Gelb / Varnes RSS → Discord Webhook
 
-The Athletic's Phillies RSS feed has no author data, so:
-  1. Poll the RSS feed for new article URLs
-  2. For each new URL, fetch the article page and extract the author
-     from meta tags / JSON-LD / HTML byline
-  3. If the author matches a watched name, post to Discord
+The Athletic publishes a per-author RSS feed, so we poll one feed per
+watched writer and post everything that shows up:
 
-This is the hybrid approach: RSS for reliable article discovery,
-a lightweight page fetch for author identification.
+  1. Poll each watched author's RSS feed for article URLs
+  2. Post anything we haven't posted before
+
+Previously this polled the Phillies team feed (which carries no author
+data) and fetched each article page to read the byline. NYT put DataDome
+bot protection in front of article pages in September 2026 — those fetches
+now return a 403 challenge page, so the byline lookup silently failed and
+every article was filed away as "not a watched author". Per-author feeds
+remove the page fetch entirely, so there is nothing left to be blocked.
 """
 
 import json
 import os
-import re
 import sys
+import re
 import time
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from dataclasses import dataclass
 
 import feedparser
 import requests
-from bs4 import BeautifulSoup
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -32,22 +35,37 @@ from bs4 import BeautifulSoup
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
-RSS_FEED = "https://www.nytimes.com/athletic/rss/mlb/phillies/"
+AUTHOR_FEED = "https://www.nytimes.com/athletic/rss/author/{slug}/"
 
 WATCHED_AUTHORS = {
-    "matt gelb": {
+    "matt-gelb": {
         "display_name": "Matt Gelb",
         "color": 0xC41E3A,  # Phillies red
     },
-    "charlotte varnes": {
+    "charlotte-varnes": {
         "display_name": "Charlotte Varnes",
         "color": 0x002D72,  # Phillies blue
     },
 }
 
 STATE_FILE = Path(__file__).parent / "posted_articles.json"
+STATE_VERSION = 2
 WEBHOOK_USERNAME = "The Athletic"
 POST_DELAY = 2
+
+# Author feeds carry years of back catalog. Ignore anything older than this
+# so a state-file mishap can never dump hundreds of old articles into Discord.
+MAX_AGE_DAYS = 14
+
+# Keep comfortably more IDs than the feeds hold (~750 combined) so a live
+# article can never age out of state and get posted twice.
+MAX_TRACKED_IDS = 3000
+
+# One-time migration (see migrate_state). The team-feed monitor went blind on
+# 2026-09-17; articles published from this date on were missed and should be
+# posted when the new monitor first runs. Safe to delete this constant and
+# migrate_state() once the migration has run in production.
+BACKFILL_SINCE = datetime(2026, 9, 18, tzinfo=timezone.utc)
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -71,8 +89,10 @@ class Article:
     url: str
     title: str
     author: str
+    color: int
     description: str = ""
     published: str = ""
+    published_at: datetime | None = None
     image_url: str = ""
 
 
@@ -81,50 +101,102 @@ def article_id(url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# State — tracks both posted and skipped articles so we don't re-fetch
-# pages for articles by other authors on every run.
+# State — an insertion-ordered list of article IDs we've already handled.
 # ---------------------------------------------------------------------------
 
-def load_state() -> dict:
+def load_state() -> dict | None:
+    """Returns None when there is no state file at all — i.e. a first run."""
     if not STATE_FILE.exists():
-        return {"posted_ids": [], "skipped_ids": [], "updated_at": ""}
+        return None
     try:
         return json.loads(STATE_FILE.read_text())
     except (json.JSONDecodeError, IOError):
-        return {"posted_ids": [], "skipped_ids": [], "updated_at": ""}
+        log.error(f"Could not read {STATE_FILE.name} — refusing to run rather "
+                  f"than risk reposting the back catalog")
+        sys.exit(1)
 
 
 def save_state(state: dict) -> None:
+    state["version"] = STATE_VERSION
+    # Newest IDs live at the end, so pruning from the front drops the oldest.
+    if len(state["posted_ids"]) > MAX_TRACKED_IDS:
+        state["posted_ids"] = state["posted_ids"][-MAX_TRACKED_IDS:]
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
+def migrate_state(state: dict, articles: list[Article]) -> dict:
+    """
+    Move a v1 (team-feed) state file to v2 (per-author feeds).
+
+    v1 tracked the Phillies team feed: `posted_ids` plus a `skipped_ids` list
+    of articles by other writers. Those skipped IDs are meaningless now — the
+    author feeds only ever contain watched writers — so they're dropped.
+
+    Everything currently in the author feeds is marked as already handled,
+    except articles from BACKFILL_SINCE onwards, which the blinded monitor
+    missed and which we want posted.
+    """
+    already_posted = set(state.get("posted_ids", []))
+
+    seeded = [
+        a.id for a in articles
+        if a.id not in already_posted
+        and not (a.published_at and a.published_at >= BACKFILL_SINCE)
+    ]
+
+    backfill = [
+        a for a in articles
+        if a.id not in already_posted
+        and a.published_at and a.published_at >= BACKFILL_SINCE
+    ]
+
+    log.info(f"🔄 Migrating state to v{STATE_VERSION}: "
+             f"{len(already_posted)} already posted, {len(seeded)} back-catalogue "
+             f"articles seeded, {len(backfill)} to backfill")
+    for a in backfill:
+        log.info(f"   backfill: {a.author} — {a.title[:60]}")
+
+    return {
+        "version": STATE_VERSION,
+        "posted_ids": sorted(already_posted) + seeded,
+        "updated_at": state.get("updated_at", ""),
+    }
+
+
 # ---------------------------------------------------------------------------
-# RSS: discover new article URLs
+# RSS: one feed per watched author
 # ---------------------------------------------------------------------------
 
-def get_rss_entries() -> list[dict]:
-    log.info(f"Fetching RSS: {RSS_FEED}")
-    feed = feedparser.parse(RSS_FEED)
+def get_author_articles(slug: str, config: dict) -> list[Article]:
+    """
+    Fetch one author's feed. Raises on anything that would make us silently
+    post nothing — a blind monitor is worse than a loud failure.
+    """
+    url = AUTHOR_FEED.format(slug=slug)
+    log.info(f"Fetching feed: {url}")
 
-    if feed.bozo and not feed.entries:
-        log.error(f"RSS error: {feed.bozo_exception}")
-        return []
+    resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=30)
+    resp.raise_for_status()
 
-    log.info(f"RSS has {len(feed.entries)} entries")
-    entries = []
+    feed = feedparser.parse(resp.content)
+    if not feed.entries:
+        raise RuntimeError(f"{url} returned no entries "
+                           f"(bozo={feed.bozo}: {getattr(feed, 'bozo_exception', None)})")
 
+    log.info(f"  {config['display_name']}: {len(feed.entries)} entries")
+
+    articles = []
     for e in feed.entries:
-        url = (e.get("link") or "").split("?")[0]
-        if not url:
+        link = (e.get("link") or "").split("?")[0]
+        if not link:
             continue
 
-        title = (e.get("title") or "").strip()
+        published_at = _parse_published(e)
         description = _clean_html(e.get("summary") or e.get("description") or "")
-        published = _parse_published(e)
 
         image_url = ""
-        if hasattr(e, "media_content") and e.media_content:
+        if getattr(e, "media_content", None):
             for m in e.media_content:
                 u = m.get("url", "")
                 if m.get("medium") == "image" or u.lower().endswith(
@@ -132,103 +204,38 @@ def get_rss_entries() -> list[dict]:
                 ):
                     image_url = u
                     break
-        if not image_url and hasattr(e, "media_thumbnail") and e.media_thumbnail:
+        if not image_url and getattr(e, "media_thumbnail", None):
             image_url = e.media_thumbnail[0].get("url", "")
 
-        entries.append({
-            "url": url,
-            "title": title,
-            "description": description[:300],
-            "published": published,
-            "image_url": image_url,
-        })
+        articles.append(Article(
+            id=article_id(link),
+            url=link,
+            title=(e.get("title") or "").strip(),
+            author=config["display_name"],
+            color=config["color"],
+            description=description[:300],
+            published=published_at.isoformat() if published_at else "",
+            published_at=published_at,
+            image_url=image_url,
+        ))
 
-    return entries
+    return articles
 
 
-# ---------------------------------------------------------------------------
-# Author extraction: fetch article page, read meta tags / JSON-LD / byline
-# ---------------------------------------------------------------------------
-
-def extract_author(url: str) -> str | None:
+def merge_cobylines(articles: list[Article]) -> list[Article]:
     """
-    Fetch an article page and extract the author name.
-
-    Tries in order of reliability:
-      1. <meta name="author">
-      2. <meta property="article:author">
-      3. <meta name="dc.creator">
-      4. JSON-LD @type NewsArticle/Article → author field
-      5. HTML byline element (class/attr containing "byline" or "author")
+    Gelb and Varnes co-write regularly, so a shared piece shows up in both
+    feeds. Collapse those to one article credited to both, in the order the
+    authors are listed in WATCHED_AUTHORS.
     """
-    try:
-        resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        log.warning(f"Could not fetch {url}: {e}")
-        return None
-
-    soup = BeautifulSoup(resp.text, "html.parser")
-
-    # --- Meta tags ---
-    for selector in [
-        {"name": "author"},
-        {"property": "article:author"},
-        {"name": "dc.creator"},
-        {"property": "og:article:author"},
-    ]:
-        tag = soup.find("meta", attrs=selector)
-        if tag and tag.get("content", "").strip():
-            return tag["content"].strip()
-
-    # --- JSON-LD ---
-    for script in soup.find_all("script", type="application/ld+json"):
-        try:
-            data = json.loads(script.string)
-            items = data if isinstance(data, list) else [data]
-            for item in items:
-                if item.get("@type") in (
-                    "NewsArticle", "Article", "BlogPosting", "ReportageNewsArticle"
-                ):
-                    return _parse_jsonld_author(item.get("author"))
-        except (json.JSONDecodeError, TypeError, AttributeError):
-            continue
-
-    # --- HTML byline ---
-    for attr in ["class", "data-testid", "itemprop"]:
-        for keyword in ["byline", "author", "AuthorName"]:
-            el = soup.find(attrs={attr: re.compile(keyword, re.I)})
-            if el:
-                text = re.sub(r"^(By\s+)", "", el.get_text(strip=True), flags=re.I)
-                if text and len(text) < 200:
-                    return text
-
-    log.warning(f"No author found for {url}")
-    return None
-
-
-def _parse_jsonld_author(author_field) -> str | None:
-    if isinstance(author_field, str):
-        return author_field
-    if isinstance(author_field, dict):
-        return author_field.get("name")
-    if isinstance(author_field, list):
-        names = [
-            a.get("name", "") if isinstance(a, dict) else str(a)
-            for a in author_field
-        ]
-        return ", ".join(n for n in names if n) or None
-    return None
-
-
-def match_author(author_str: str) -> dict | None:
-    if not author_str:
-        return None
-    lower = author_str.lower()
-    for key, config in WATCHED_AUTHORS.items():
-        if key in lower:
-            return config
-    return None
+    merged: dict[str, Article] = {}
+    for article in articles:
+        existing = merged.get(article.id)
+        if existing is None:
+            merged[article.id] = article
+        elif article.author not in existing.author:
+            existing.author = f"{existing.author} & {article.author}"
+    return list(merged.values())
 
 
 # ---------------------------------------------------------------------------
@@ -236,15 +243,10 @@ def match_author(author_str: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 def post_to_discord(article: Article) -> bool:
-    if not DISCORD_WEBHOOK_URL:
-        return False
-
-    config = match_author(article.author) or {}
-
     embed: dict = {
         "title": article.title[:256],
         "url": article.url,
-        "color": config.get("color", 0x808080),
+        "color": article.color,
         "author": {"name": article.author},
         "footer": {"text": "The Athletic"},
     }
@@ -286,65 +288,58 @@ def run():
         sys.exit(1)
 
     state = load_state()
-    known_ids = set(state.get("posted_ids", []) + state.get("skipped_ids", []))
 
-    entries = get_rss_entries()
+    articles: list[Article] = []
+    for slug, config in WATCHED_AUTHORS.items():
+        try:
+            articles.extend(get_author_articles(slug, config))
+        except (requests.RequestException, RuntimeError) as e:
+            # Fail loudly: a broken feed used to look like "no new articles",
+            # which is how this monitor stayed dead for four days.
+            log.error(f"❌ Feed for {config['display_name']} is broken: {e}")
+            sys.exit(1)
 
-    # First run: seed state with all current articles so we only post
-    # genuinely new ones going forward — no backfill spam.
-    if not known_ids and entries:
-        seed_ids = [article_id(e["url"]) for e in entries]
-        state["skipped_ids"] = seed_ids
-        save_state(state)
-        log.info(f"🌱 First run — seeded {len(seed_ids)} existing articles. Next run will only post new ones.")
+    articles = merge_cobylines(articles)
+
+    # Oldest first, so a burst of posts reads in publication order.
+    articles.sort(key=lambda a: a.published_at or datetime.min.replace(tzinfo=timezone.utc))
+
+    # First run: record everything currently in the feeds so we only post
+    # genuinely new articles going forward — no back-catalogue spam.
+    if state is None:
+        save_state({"posted_ids": [a.id for a in articles], "updated_at": ""})
+        log.info(f"🌱 First run — seeded {len(articles)} existing articles. "
+                 f"Next run will only post new ones.")
         return
 
+    migrating = state.get("version") != STATE_VERSION
+    if migrating:
+        state = migrate_state(state, articles)
+
+    known = set(state["posted_ids"])
+
+    # On a migration run the seeded state already covers the whole back
+    # catalogue, so the age guard would only block the intended backfill.
+    cutoff = None if migrating else datetime.now(timezone.utc) - timedelta(days=MAX_AGE_DAYS)
+
     new_posted = []
-    new_skipped = []
-
-    for entry in entries:
-        aid = article_id(entry["url"])
-        if aid in known_ids:
+    for article in articles:
+        if article.id in known:
             continue
-
-        log.info(f"New article: {entry['title'][:60]}...")
-
-        author = extract_author(entry["url"])
-        if not author:
-            log.info("  Could not determine author, skipping")
-            new_skipped.append(aid)
+        if cutoff and article.published_at and article.published_at < cutoff:
+            log.info(f"  Skipping (older than {MAX_AGE_DAYS}d): {article.title[:60]}")
+            known.add(article.id)
+            state["posted_ids"].append(article.id)
             continue
-
-        config = match_author(author)
-        if not config:
-            log.info(f"  Author '{author}' — not watched, skipping")
-            new_skipped.append(aid)
-            continue
-
-        article = Article(
-            id=aid,
-            url=entry["url"],
-            title=entry["title"],
-            author=config["display_name"],
-            description=entry.get("description", ""),
-            published=entry.get("published", ""),
-            image_url=entry.get("image_url", ""),
-        )
 
         if post_to_discord(article):
-            new_posted.append(aid)
+            known.add(article.id)
+            new_posted.append(article.id)
             time.sleep(POST_DELAY)
 
-    # Update state
-    state["posted_ids"] = sorted(set(state.get("posted_ids", [])) | set(new_posted))
-    state["skipped_ids"] = sorted(set(state.get("skipped_ids", [])) | set(new_skipped))
-
-    # Prune skipped list to prevent unbounded growth
-    if len(state["skipped_ids"]) > 500:
-        state["skipped_ids"] = state["skipped_ids"][-500:]
-
+    state["posted_ids"].extend(new_posted)
     save_state(state)
-    log.info(f"✅ Done. {len(new_posted)} posted, {len(new_skipped)} skipped.")
+    log.info(f"✅ Done. {len(new_posted)} posted.")
 
 
 # ---------------------------------------------------------------------------
@@ -359,13 +354,13 @@ def _clean_html(text: str) -> str:
     return text.strip()
 
 
-def _parse_published(entry) -> str:
-    if hasattr(entry, "published_parsed") and entry.published_parsed:
+def _parse_published(entry) -> datetime | None:
+    if getattr(entry, "published_parsed", None):
         try:
-            return datetime(*entry.published_parsed[:6], tzinfo=timezone.utc).isoformat()
+            return datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
         except (TypeError, ValueError):
             pass
-    return getattr(entry, "published", "")
+    return None
 
 
 if __name__ == "__main__":
