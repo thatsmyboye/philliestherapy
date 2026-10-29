@@ -67,6 +67,12 @@ MAX_TRACKED_IDS = 3000
 # migrate_state() once the migration has run in production.
 BACKFILL_SINCE = datetime(2026, 9, 18, tzinfo=timezone.utc)
 
+# The feeds sit behind a CDN that gives up on a slow origin after ~10s and
+# returns a 504. Those blips clear within minutes, so retry before declaring
+# the feed broken. Worst case is ~1.5 min per feed, well inside the 15-min cron.
+FEED_RETRY_DELAYS = [10, 30]
+TRANSIENT_STATUSES = {429, 500, 502, 503, 504}
+
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -176,8 +182,7 @@ def get_author_articles(slug: str, config: dict) -> list[Article]:
     url = AUTHOR_FEED.format(slug=slug)
     log.info(f"Fetching feed: {url}")
 
-    resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=30)
-    resp.raise_for_status()
+    resp = _fetch_with_retry(url)
 
     feed = feedparser.parse(resp.content)
     if not feed.entries:
@@ -354,6 +359,28 @@ def run():
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _fetch_with_retry(url: str) -> requests.Response:
+    """
+    GET a feed, retrying gateway timeouts and other transient errors. Anything
+    else (403, 404, ...) means the feed is genuinely broken and raises at once.
+    """
+    for attempt, delay in enumerate(FEED_RETRY_DELAYS + [None], start=1):
+        try:
+            resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=30)
+            if resp.status_code not in TRANSIENT_STATUSES:
+                resp.raise_for_status()
+                return resp
+            error: Exception = requests.HTTPError(
+                f"{resp.status_code} {resp.reason} for url: {url}", response=resp)
+        except (requests.ConnectionError, requests.Timeout) as e:
+            error = e
+
+        if delay is None:
+            raise error
+        log.warning(f"  Attempt {attempt} failed ({error}) — retrying in {delay}s")
+        time.sleep(delay)
+
 
 def _clean_html(text: str) -> str:
     text = re.sub(r"<[^>]+>", "", text)
