@@ -1024,48 +1024,90 @@ def _fetch_json(url: str) -> dict:
             return _json.loads(r.read())
 
 
-def get_phillies_historical_roster(year: int) -> list[dict]:
+def get_phillies_season_player_stats(year: int) -> list[dict]:
     """
-    Return the full-season roster for the Phillies in the given year (24-hour cache).
+    Return every player who appeared for the Phillies in the given season, with
+    their Phillies-only hitting and pitching lines (24-hour cache).
 
-    Each entry: {id, fullName, position, is_pitcher}
+    Uses two team-filtered /stats queries (hitting + pitching) plus the season
+    roster (for positions) instead of one request per player, so /remember stays
+    fast and isn't throttled.
+
+    Each entry: {id, fullName, position, hitting: {...}, pitching: {...}}
+    Stat dicts are empty if the player had no appearances in that role.
     """
-    key = f"historical_roster_{year}"
+    key = f"phillies_season_player_stats_{year}"
     cached = _cache_get(key, 24 * 3600)
     if cached is not None:
         return cached
 
-    url = (
+    # The stats splits sometimes label position "X" (unknown); the season roster
+    # carries the real position, so prefer it when available.
+    roster_positions: dict[int, str] = {}
+    roster_url = (
         f"https://statsapi.mlb.com/api/v1/teams/{PHILLIES_TEAM_ID}/roster"
         f"?rosterType=fullSeason&season={year}"
     )
     try:
         try:
-            data = statsapi.get(
+            roster = statsapi.get(
                 "team_roster",
-                {
-                    "teamId": PHILLIES_TEAM_ID,
-                    "rosterType": "fullSeason",
-                    "season": year,
-                },
+                {"teamId": PHILLIES_TEAM_ID, "rosterType": "fullSeason", "season": year},
             )
         except Exception:
-            data = _fetch_json(url)
-
-        players = []
-        for entry in data.get("roster", []):
-            position = entry.get("position", {}).get("abbreviation", "?")
-            players.append({
-                "id": entry["person"]["id"],
-                "fullName": entry["person"]["fullName"],
-                "position": position,
-                "is_pitcher": position == "P",
-            })
-        if players:
-            _cache_set(key, players)
-        return players
+            roster = _fetch_json(roster_url)
+        for entry in roster.get("roster", []):
+            pos = entry.get("position", {}).get("abbreviation")
+            if pos:
+                roster_positions[entry["person"]["id"]] = pos
     except Exception:
-        return []
+        pass
+
+    players: dict[int, dict] = {}
+    for group in ("hitting", "pitching"):
+        params = {
+            "stats": "season",
+            "group": group,
+            "teamId": PHILLIES_TEAM_ID,
+            "season": year,
+            "sportId": 1,
+            "playerPool": "ALL",
+            "limit": 500,
+        }
+        url = (
+            "https://statsapi.mlb.com/api/v1/stats?"
+            + "&".join(f"{k}={v}" for k, v in params.items())
+        )
+        try:
+            try:
+                data = statsapi.get("stats", params)
+            except Exception:
+                data = _fetch_json(url)
+        except Exception:
+            continue
+
+        for stat_group in data.get("stats", []):
+            for split in stat_group.get("splits", []):
+                if split.get("team", {}).get("id") != PHILLIES_TEAM_ID:
+                    continue
+                person = split.get("player", {})
+                pid = person.get("id")
+                if pid is None:
+                    continue
+                entry = players.setdefault(pid, {
+                    "id": pid,
+                    "fullName": person.get("fullName", "Unknown"),
+                    "position": roster_positions.get(pid)
+                    or split.get("position", {}).get("abbreviation", "?"),
+                    "hitting": {},
+                    "pitching": {},
+                })
+                entry[group] = split.get("stat", {})
+
+    result = list(players.values())
+    if result:
+        _cache_set(key, result)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1293,43 +1335,3 @@ def get_team_luck(team_abbr: str, team_id: int, lucky: bool) -> dict[str, list[d
     hitter_scores.sort(key=lambda x: x["score"], reverse=lucky)
     pitcher_scores.sort(key=lambda x: x["score"], reverse=lucky)
     return {"hitters": hitter_scores[:3], "pitchers": pitcher_scores[:3]}
-
-
-def get_player_phillies_season_stats(player_id: int, year: int) -> dict:
-    """
-    Return a player's hitting and pitching stats for the given year while on the Phillies.
-
-    Result: {'hitting': {...}, 'pitching': {...}}
-    Stats dicts are empty if the player had no appearances in that role.
-    """
-    url = (
-        f"https://statsapi.mlb.com/api/v1/people/{player_id}"
-        f"?hydrate=stats(group=[hitting,pitching],type=yearByYear,sportId=1),currentTeam"
-    )
-    try:
-        try:
-            data = statsapi.get(
-                "person",
-                {
-                    "personId": player_id,
-                    "hydrate": "stats(group=[hitting,pitching],type=yearByYear,sportId=1),currentTeam",
-                },
-            )
-        except Exception:
-            data = _fetch_json(url)
-
-        result: dict[str, dict] = {"hitting": {}, "pitching": {}}
-        for stat_group in data.get("people", [{}])[0].get("stats", []):
-            group_name = stat_group.get("group", {}).get("displayName", "").lower()
-            if group_name not in ("hitting", "pitching"):
-                continue
-            for split in stat_group.get("splits", []):
-                if str(split.get("season", "")) != str(year):
-                    continue
-                team_id = split.get("team", {}).get("id")
-                if team_id == PHILLIES_TEAM_ID:
-                    result[group_name] = split.get("stat", {})
-                    break
-        return result
-    except Exception:
-        return {"hitting": {}, "pitching": {}}
