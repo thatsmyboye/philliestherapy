@@ -17,17 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create .env file from secrets
-        run: |
-          cat > projects/phillies-bot/.env <<'EOF'
-          DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }}
-          DISCORD_GUILD_ID=${{ secrets.DISCORD_GUILD_ID }}
-          ALERTS_CHANNEL_ID=${{ secrets.ALERTS_CHANNEL_ID }}
-          BINGO_CHANNEL_ID=${{ secrets.BINGO_CHANNEL_ID }}
-          OTHER_BINGO_CHANNEL_ID=${{ secrets.OTHER_BINGO_CHANNEL_ID }}
-          EOF
-          # Strip leading whitespace from heredoc indentation
-          sed -i 's/^[[:space:]]*//' projects/phillies-bot/.env
+      # The bot's .env (Discord IDs, Supabase, Redis) lives only on Pebblehost and
+      # is never uploaded from here. Several of the matching GitHub secrets are
+      # empty, so generating it here would overwrite the working config.
 
       # The bot host is blocked by statsapi.mlb.com, so /remember reads a bundled
       # snapshot. Refresh the current and previous season here before upload;
@@ -49,14 +41,29 @@ jobs:
 
       - name: Deploy via SFTP
         env:
-          SFTP_PASSWORD: ${{ secrets.PEBBLEHOST_SFTP_PASSWORD }}
+          LFTP_PASSWORD: ${{ secrets.PEBBLEHOST_SFTP_PASSWORD }}
         run: |
+          if [ -z "$LFTP_PASSWORD" ]; then
+            echo "::error::PEBBLEHOST_SFTP_PASSWORD secret is empty"
+            exit 1
+          fi
+          # --env-password reads LFTP_PASSWORD, so the password never has to be
+          # quoted into the command. No --delete, and runtime files are
+          # excluded, so .env and the bot's saved state on the host are never
+          # overwritten or removed.
           lftp -c "
+            set cmd:fail-exit yes;
             set sftp:auto-confirm yes;
             set net:timeout 30;
             set net:max-retries 3;
-            open -u 'paul.t.boye@gmail.com.da213d9e',':','${SFTP_PASSWORD}','@',sftp://na1660.pebblehost.net:2222;
-            mirror --reverse --delete --verbose \
+            open --env-password -u 'paul.t.boye@gmail.com.da213d9e' sftp://na1660.pebblehost.net:2222;
+            mirror --reverse --verbose \
+              --exclude-glob .env \
+              --exclude-glob __pycache__/ \
+              --exclude-glob '*.tmp' \
+              --exclude-glob data/state.json \
+              --exclude-glob data/state.db \
+              --exclude-glob 'data/bingo*.json' \
               projects/phillies-bot/ \
               /projects/phillies-bot/;
             bye
