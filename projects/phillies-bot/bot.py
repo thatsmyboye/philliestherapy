@@ -40,7 +40,6 @@ COGS = [
     # "cogs.matchup",       # DISABLED — /matchup command hidden
     "cogs.steal_monitor",
     # "cogs.getaway",       # DISABLED — /getaway command hidden
-    "cogs.props",
     "cogs.bingo",
     "cogs.remember",
     # "cogs.sequence",      # DISABLED — /sequence command hidden

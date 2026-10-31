@@ -23,7 +23,6 @@ jobs:
           DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_GUILD_ID=${{ secrets.DISCORD_GUILD_ID }}
           ALERTS_CHANNEL_ID=${{ secrets.ALERTS_CHANNEL_ID }}
-          PROPS_CHANNEL_ID=${{ secrets.PROPS_CHANNEL_ID }}
           BINGO_CHANNEL_ID=${{ secrets.BINGO_CHANNEL_ID }}
           OTHER_BINGO_CHANNEL_ID=${{ secrets.OTHER_BINGO_CHANNEL_ID }}
           EOF
