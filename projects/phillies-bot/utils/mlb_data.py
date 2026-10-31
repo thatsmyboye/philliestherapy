@@ -1006,22 +1006,60 @@ def get_wildcard_standings() -> dict[str, list[dict]]:
 # Historical roster / stats helpers (for /remember)
 # ---------------------------------------------------------------------------
 
+_STATSAPI_BASE = "https://statsapi.mlb.com/api/v1"
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json",
+}
+
+
 def _fetch_json(url: str) -> dict:
     """
-    Fetch a JSON URL via curl_cffi (Chrome impersonation) to bypass Akamai JA3
-    fingerprint blocks that cause 406 errors with plain requests/statsapi.
-    Falls back to urllib if curl_cffi is not installed.
+    Fetch a JSON URL, trying curl_cffi (Chrome impersonation) first to bypass
+    Akamai JA3 fingerprint blocks that cause 406 errors with plain
+    requests/statsapi, then urllib with browser headers.
+
+    Raises RuntimeError naming every attempt's failure if none succeed.
     """
+    import json as _json
+    import urllib.request as _ur
+
+    errors: list[str] = []
     try:
         from curl_cffi import requests as _cffi
-        resp = _cffi.get(url, impersonate="chrome124", timeout=30)
+    except ImportError:
+        _cffi = None
+        errors.append("curl_cffi not installed")
+
+    if _cffi is not None:
+        try:
+            resp = _cffi.get(url, impersonate="chrome124", timeout=30)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as exc:
+            errors.append(f"curl_cffi: {exc}")
+
+    try:
+        req = _ur.Request(url, headers=_BROWSER_HEADERS)
+        with _ur.urlopen(req, timeout=30) as r:
+            return _json.loads(r.read())
+    except Exception as exc:
+        errors.append(f"urllib: {exc}")
+
+    # statsapi itself is built on requests, so try it too in case it's the one
+    # route the host allows.
+    try:
+        import requests as _requests
+        resp = _requests.get(url, headers=_BROWSER_HEADERS, timeout=30)
         resp.raise_for_status()
         return resp.json()
-    except ImportError:
-        import json as _json
-        import urllib.request as _ur
-        with _ur.urlopen(url, timeout=30) as r:
-            return _json.loads(r.read())
+    except Exception as exc:
+        errors.append(f"requests: {exc}")
+
+    raise RuntimeError("; ".join(errors))
 
 
 def get_phillies_season_player_stats(year: int) -> list[dict]:
@@ -1035,6 +1073,8 @@ def get_phillies_season_player_stats(year: int) -> list[dict]:
 
     Each entry: {id, fullName, position, hitting: {...}, pitching: {...}}
     Stat dicts are empty if the player had no appearances in that role.
+    Returns [] for a season with no games; raises RuntimeError if the stats
+    requests themselves fail, so callers can tell the two apart.
     """
     key = f"phillies_season_player_stats_{year}"
     cached = _cache_get(key, 24 * 3600)
@@ -1044,47 +1084,30 @@ def get_phillies_season_player_stats(year: int) -> list[dict]:
     # The stats splits sometimes label position "X" (unknown); the season roster
     # carries the real position, so prefer it when available.
     roster_positions: dict[int, str] = {}
-    roster_url = (
-        f"https://statsapi.mlb.com/api/v1/teams/{PHILLIES_TEAM_ID}/roster"
-        f"?rosterType=fullSeason&season={year}"
-    )
     try:
-        try:
-            roster = statsapi.get(
-                "team_roster",
-                {"teamId": PHILLIES_TEAM_ID, "rosterType": "fullSeason", "season": year},
-            )
-        except Exception:
-            roster = _fetch_json(roster_url)
+        roster = _fetch_json(
+            f"{_STATSAPI_BASE}/teams/{PHILLIES_TEAM_ID}/roster"
+            f"?rosterType=fullSeason&season={year}"
+        )
         for entry in roster.get("roster", []):
             pos = entry.get("position", {}).get("abbreviation")
             if pos:
                 roster_positions[entry["person"]["id"]] = pos
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[remember] {year} roster fetch failed (positions only): {exc}")
 
     players: dict[int, dict] = {}
     for group in ("hitting", "pitching"):
-        params = {
-            "stats": "season",
-            "group": group,
-            "teamId": PHILLIES_TEAM_ID,
-            "season": year,
-            "sportId": 1,
-            "playerPool": "ALL",
-            "limit": 500,
-        }
         url = (
-            "https://statsapi.mlb.com/api/v1/stats?"
-            + "&".join(f"{k}={v}" for k, v in params.items())
+            f"{_STATSAPI_BASE}/stats?stats=season&group={group}"
+            f"&teamId={PHILLIES_TEAM_ID}&season={year}&sportId=1"
+            f"&playerPool=ALL&limit=500"
         )
         try:
-            try:
-                data = statsapi.get("stats", params)
-            except Exception:
-                data = _fetch_json(url)
-        except Exception:
-            continue
+            data = _fetch_json(url)
+        except Exception as exc:
+            print(f"[remember] {year} {group} stats fetch failed: {exc}")
+            raise RuntimeError(f"{group} stats request failed ({exc})") from exc
 
         for stat_group in data.get("stats", []):
             for split in stat_group.get("splits", []):

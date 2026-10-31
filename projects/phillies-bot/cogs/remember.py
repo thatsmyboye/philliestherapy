@@ -161,11 +161,16 @@ class RememberCog(commands.Cog, name="Remember"):
             )
 
         loop = asyncio.get_running_loop()
+        last_error: Optional[str] = None
         for chosen_year in years:
             # Blocking HTTP calls run off the event loop so the bot stays responsive.
-            season_players = await loop.run_in_executor(
-                None, get_phillies_season_player_stats, chosen_year
-            )
+            try:
+                season_players = await loop.run_in_executor(
+                    None, get_phillies_season_player_stats, chosen_year
+                )
+            except Exception as exc:
+                last_error = str(exc)
+                continue
             candidates = [
                 p for p in season_players
                 if _has_hitting(p.get("hitting", {})) or _has_pitching(p.get("pitching", {}))
@@ -175,10 +180,13 @@ class RememberCog(commands.Cog, name="Remember"):
                 await interaction.followup.send(embed=embed)
                 return
 
-        if year is not None:
-            msg = f"Couldn't retrieve stats for the **{year} Phillies**. Try another year."
+        if last_error is not None:
+            # Discord message content is capped at 2000 characters.
+            msg = f"Couldn't reach the MLB Stats API: `{last_error[:1500]}`"
+        elif year is not None:
+            msg = f"No stats found for the **{year} Phillies**. Try another year."
         else:
-            msg = "Couldn't retrieve Phillies stats right now. Try again in a bit."
+            msg = "Couldn't find Phillies stats right now. Try again in a bit."
         await interaction.followup.send(msg, ephemeral=True)
 
 
