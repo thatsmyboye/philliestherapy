@@ -12,6 +12,7 @@ A feature-rich Discord bot for the Phillies Therapy server, built with discord.p
 - **Luck** — Phillies team performance luck metrics and analysis
 - **Monitor** — Live game monitoring: milestone and career-high alerts
 - **Standings** — Live team standings and division updates
+- **Remember** — `/remember` spotlights a random Phillies player from any season since 1883. Season stats ship in `data/remember_seasons.json` because the bot host is blocked by the MLB Stats API; rebuild it from anywhere else with `python scripts/build_remember_data.py` (the deploy workflow refreshes the current and previous season automatically)
 
 **Setup:**
 - Requires `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and `ALERTS_CHANNEL_ID` environment variables (see `projects/phillies-bot/.env.example` for the full list)
