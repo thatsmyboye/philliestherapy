@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import urllib.error
 import urllib.request
 from collections import defaultdict
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any, Optional
 
 import statsapi
@@ -1062,10 +1064,74 @@ def _fetch_json(url: str) -> dict:
     raise RuntimeError("; ".join(errors))
 
 
+# The bot host's IP is blocked by statsapi.mlb.com's Akamai edge (406 on every
+# client), so /remember reads seasons from a bundled snapshot built off-host by
+# scripts/build_remember_data.py. Live fetches are only a fallback for seasons
+# missing from the snapshot.
+REMEMBER_DATA_FILE = Path(__file__).resolve().parents[1] / "data" / "remember_seasons.json"
+REMEMBER_HITTING_FIELDS = ("plateAppearances", "avg", "obp", "slg", "homeRuns", "rbi")
+REMEMBER_PITCHING_FIELDS = ("inningsPitched", "era", "strikeOuts", "baseOnBalls")
+
+_bundled_seasons: Optional[dict[str, list]] = None
+
+
+def compact_remember_player(player: dict) -> list:
+    """Pack a player entry into a [id, name, position, hitting, pitching] row."""
+    def _pack(stats: dict, fields: tuple[str, ...]) -> Optional[list]:
+        return [stats.get(f) for f in fields] if stats else None
+
+    return [
+        player["id"],
+        player["fullName"],
+        player["position"],
+        _pack(player.get("hitting", {}), REMEMBER_HITTING_FIELDS),
+        _pack(player.get("pitching", {}), REMEMBER_PITCHING_FIELDS),
+    ]
+
+
+def _expand_remember_row(row: list) -> dict:
+    pid, name, position, hitting, pitching = row
+    return {
+        "id": pid,
+        "fullName": name,
+        "position": position,
+        "hitting": dict(zip(REMEMBER_HITTING_FIELDS, hitting)) if hitting else {},
+        "pitching": dict(zip(REMEMBER_PITCHING_FIELDS, pitching)) if pitching else {},
+    }
+
+
+def load_bundled_remember_seasons() -> dict[str, list]:
+    """Return the bundled {season: [rows]} snapshot, or {} if it's missing or unreadable."""
+    global _bundled_seasons
+    if _bundled_seasons is None:
+        try:
+            with open(REMEMBER_DATA_FILE, encoding="utf-8") as f:
+                _bundled_seasons = json.load(f).get("seasons", {})
+        except Exception as exc:
+            print(f"[remember] could not load {REMEMBER_DATA_FILE.name}: {exc}")
+            _bundled_seasons = {}
+    return _bundled_seasons
+
+
 def get_phillies_season_player_stats(year: int) -> list[dict]:
     """
     Return every player who appeared for the Phillies in the given season, with
-    their Phillies-only hitting and pitching lines (24-hour cache).
+    their Phillies-only hitting and pitching lines.
+
+    Reads the bundled snapshot first; falls back to a live fetch (which raises
+    RuntimeError if the MLB Stats API can't be reached) for seasons it lacks.
+    """
+    rows = load_bundled_remember_seasons().get(str(year))
+    if rows is not None:
+        return [_expand_remember_row(r) for r in rows]
+    return fetch_phillies_season_player_stats(year)
+
+
+def fetch_phillies_season_player_stats(year: int) -> list[dict]:
+    """
+    Fetch every player who appeared for the Phillies in the given season from
+    the MLB Stats API, with their Phillies-only hitting and pitching lines
+    (24-hour cache).
 
     Uses two team-filtered /stats queries (hitting + pitching) plus the season
     roster (for positions) instead of one request per player, so /remember stays
