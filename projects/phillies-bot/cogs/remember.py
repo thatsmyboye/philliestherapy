@@ -9,6 +9,7 @@ season if none is specified) and shows their stats for that year.
 """
 from __future__ import annotations
 
+import asyncio
 import random
 from datetime import datetime
 from typing import Optional
@@ -17,17 +18,17 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.mlb_data import (
-    PHILLIES_TEAM_ID,
-    get_phillies_historical_roster,
-    get_player_phillies_season_stats,
-)
+from utils.mlb_data import get_phillies_season_player_stats
 
 PHILLIES_RED = 0xE81828
 PHILLIES_BLUE = 0x003087
 
 PHILLIES_FIRST_SEASON = 1883
 PHILLIES_LAST_SEASON = datetime.now().year
+
+# How many random seasons to try before giving up (a random pick can land on a
+# season with no data yet, e.g. the new calendar year before Opening Day).
+RANDOM_YEAR_ATTEMPTS = 5
 
 
 # ---------------------------------------------------------------------------
@@ -80,11 +81,11 @@ def _int_stat(val: object) -> int:
 # Embed builder
 # ---------------------------------------------------------------------------
 
-def _build_embed(player: dict, stats: dict, year: int) -> discord.Embed:
+def _build_embed(player: dict, year: int) -> discord.Embed:
     name = player["fullName"]
     position = player.get("position", "?")
-    hitting = stats.get("hitting", {})
-    pitching = stats.get("pitching", {})
+    hitting = player.get("hitting", {})
+    pitching = player.get("pitching", {})
 
     is_pitcher = _has_pitching(pitching) and not _has_hitting(hitting)
     color = PHILLIES_BLUE if is_pitcher else PHILLIES_RED
@@ -151,41 +152,34 @@ class RememberCog(commands.Cog, name="Remember"):
     ) -> None:
         await interaction.response.defer()
 
-        chosen_year = year if year is not None else random.randint(
-            PHILLIES_FIRST_SEASON, PHILLIES_LAST_SEASON
-        )
-
-        roster = get_phillies_historical_roster(chosen_year)
-        if not roster:
-            msg = (
-                f"No roster data found for the **{chosen_year} Phillies**. Try another year."
+        if year is not None:
+            years = [year]
+        else:
+            years = random.sample(
+                range(PHILLIES_FIRST_SEASON, PHILLIES_LAST_SEASON + 1),
+                RANDOM_YEAR_ATTEMPTS,
             )
-            await interaction.followup.send(msg, ephemeral=True)
-            return
 
-        # Shuffle and try up to 20 candidates to find one with actual stats.
-        candidates = roster.copy()
-        random.shuffle(candidates)
-
-        player = None
-        player_stats: dict = {}
-
-        for candidate in candidates[:20]:
-            stats = get_player_phillies_season_stats(candidate["id"], chosen_year)
-            if _has_hitting(stats.get("hitting", {})) or _has_pitching(stats.get("pitching", {})):
-                player = candidate
-                player_stats = stats
-                break
-
-        if player is None:
-            msg = (
-                f"Couldn't retrieve stats for the **{chosen_year} Phillies**. Try another year."
+        loop = asyncio.get_running_loop()
+        for chosen_year in years:
+            # Blocking HTTP calls run off the event loop so the bot stays responsive.
+            season_players = await loop.run_in_executor(
+                None, get_phillies_season_player_stats, chosen_year
             )
-            await interaction.followup.send(msg, ephemeral=True)
-            return
+            candidates = [
+                p for p in season_players
+                if _has_hitting(p.get("hitting", {})) or _has_pitching(p.get("pitching", {}))
+            ]
+            if candidates:
+                embed = _build_embed(random.choice(candidates), chosen_year)
+                await interaction.followup.send(embed=embed)
+                return
 
-        embed = _build_embed(player, player_stats, chosen_year)
-        await interaction.followup.send(embed=embed)
+        if year is not None:
+            msg = f"Couldn't retrieve stats for the **{year} Phillies**. Try another year."
+        else:
+            msg = "Couldn't retrieve Phillies stats right now. Try again in a bit."
+        await interaction.followup.send(msg, ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:
