@@ -615,30 +615,6 @@ class GetAwayCog(commands.Cog, name="GetAway"):
         embed.set_footer(text=" · ".join(p for p in footer_parts if p))
         await interaction.followup.send(embed=embed)
 
-    @getaway.autocomplete("pitcher")
-    async def getaway_pitcher_autocomplete(
-        self,
-        interaction: discord.Interaction,
-        current: str,
-    ) -> list[app_commands.Choice[str]]:
-        """Return pitchers with 1+ recorded PAR starts, sorted A-Z by last name."""
-        spgrader = self.bot.cogs.get("SPGrader")
-        if spgrader is None:
-            return []
-
-        seen: dict[int, str] = {}
-        for r in spgrader.monitor.leaderboard._records:
-            seen[r.pitcher_id] = r.pitcher_name
-
-        def _last_name(name: str) -> str:
-            parts = name.strip().split()
-            return parts[-1].lower() if parts else name.lower()
-
-        pitchers = sorted(seen.values(), key=_last_name)
-        if current:
-            pitchers = [p for p in pitchers if current.lower() in p.lower()]
-
-        return [app_commands.Choice(name=p, value=p) for p in pitchers[:25]]
 
 
 async def setup(bot: commands.Bot) -> None:

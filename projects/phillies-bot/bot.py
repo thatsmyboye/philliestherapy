@@ -36,7 +36,6 @@ COGS = [
     "cogs.luck",
     "cogs.monitor",
     "cogs.standings",
-    "cogs.spgrader",
     "cogs.trends",
     # "cogs.matchup",       # DISABLED — /matchup command hidden
     "cogs.steal_monitor",
