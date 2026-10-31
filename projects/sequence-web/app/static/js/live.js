@@ -60,27 +60,6 @@
     }
   }
 
-  /* ── Live PAR grade feed ── */
-  var parFeed = document.getElementById('live-par-feed');
-  if (parFeed) {
-    openSSE('/par/stream', function (data) {
-      var row = document.createElement('tr');
-      row.innerHTML =
-        '<td>' + (data.game_date || '') + '</td>'
-        + '<td><a class="player-link" href="/par/' + (data.pitcher_id || '') + '">'
-        + (data.pitcher_name || '') + '</a></td>'
-        + '<td class="right">' + (data.ip || '') + '</td>'
-        + '<td class="right">' + (data.score != null ? data.score.toFixed(1) : '') + '</td>'
-        + '<td class="center"><span class="grade grade-' + gradeClass(data.grade) + '">'
-        + (data.grade || '') + '</span></td>';
-      parFeed.insertBefore(row, parFeed.firstChild);
-      // keep at most 20 rows
-      while (parFeed.children.length > 20) {
-        parFeed.removeChild(parFeed.lastChild);
-      }
-    });
-  }
-
   /* ── Live steal alert feed ── */
   var stealFeed = document.getElementById('live-steal-feed');
   if (stealFeed) {
@@ -99,12 +78,6 @@
         stealFeed.removeChild(stealFeed.lastChild);
       }
     });
-  }
-
-  function gradeClass(grade) {
-    if (!grade) return '';
-    if (grade === 'A+') return 'Ap';
-    return grade.charAt(0);
   }
 
   function starsHtml(n) {

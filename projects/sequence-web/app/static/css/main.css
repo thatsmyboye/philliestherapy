@@ -309,21 +309,6 @@ select.search-input {
   margin-top: 4px;
 }
 
-/* ── Stat component bar (PAR breakdown) ── */
-.component-bar {
-  height: 6px;
-  background: var(--border);
-  border-radius: 3px;
-  overflow: hidden;
-  margin-top: 3px;
-}
-
-.component-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.4s ease;
-}
-
 /* ── Today's games ticker ── */
 .games-row {
   display: flex;

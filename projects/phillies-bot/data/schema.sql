@@ -1,7 +1,7 @@
 -- Supabase schema for Phillies bot / web app
 -- Run this once in the Supabase SQL editor to create the required tables.
 
--- Generic key-value store used by bot_state and props_state
+-- Generic key-value store used by bot_state
 CREATE TABLE IF NOT EXISTS kv_store (
     key         TEXT PRIMARY KEY,
     value       JSONB        NOT NULL,

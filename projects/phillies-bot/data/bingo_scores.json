@@ -1,0 +1,21 @@
+{
+  "season": 2026,
+  "scores": {
+    "190637483048960000": {
+      "total_points": 8,
+      "games_played": 0,
+      "wins": 0,
+      "history": [
+        {
+          "date": "__bonus__",
+          "place": 0,
+          "points": 8,
+          "bonus_id": "phillies_bingo_bonus_8pts_190637483048960000_a9b4"
+        }
+      ]
+    }
+  },
+  "_applied_bonuses": [
+    "phillies_bingo_bonus_8pts_190637483048960000_a9b4"
+  ]
+}

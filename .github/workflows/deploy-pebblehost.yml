@@ -23,13 +23,26 @@ jobs:
           DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_GUILD_ID=${{ secrets.DISCORD_GUILD_ID }}
           ALERTS_CHANNEL_ID=${{ secrets.ALERTS_CHANNEL_ID }}
-          SP_GRADER_CHANNEL_ID=${{ secrets.SP_GRADER_CHANNEL_ID }}
-          PROPS_CHANNEL_ID=${{ secrets.PROPS_CHANNEL_ID }}
           BINGO_CHANNEL_ID=${{ secrets.BINGO_CHANNEL_ID }}
           OTHER_BINGO_CHANNEL_ID=${{ secrets.OTHER_BINGO_CHANNEL_ID }}
           EOF
           # Strip leading whitespace from heredoc indentation
           sed -i 's/^[[:space:]]*//' projects/phillies-bot/.env
+
+      # The bot host is blocked by statsapi.mlb.com, so /remember reads a bundled
+      # snapshot. Refresh the current and previous season here before upload;
+      # if the runner can't reach the API either, the committed data ships as-is.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Refresh /remember season data
+        continue-on-error: true
+        working-directory: projects/phillies-bot
+        run: |
+          pip install -q MLB-StatsAPI curl_cffi
+          YEAR=$(date +%Y)
+          python scripts/build_remember_data.py $((YEAR - 1)) "$YEAR"
 
       - name: Install lftp
         run: sudo apt-get install -y lftp
