@@ -7,6 +7,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import time
 import urllib.error
 import urllib.request
 from collections import defaultdict
@@ -1066,13 +1067,22 @@ def _fetch_json(url: str) -> dict:
 
 # The bot host's IP is blocked by statsapi.mlb.com's Akamai edge (406 on every
 # client), so /remember reads seasons from a bundled snapshot built off-host by
-# scripts/build_remember_data.py. Live fetches are only a fallback for seasons
-# missing from the snapshot.
+# scripts/build_remember_data.py. If the deployed copy is missing, it's pulled
+# from the public GitHub repo (not behind MLB's edge) and saved locally. Live
+# MLB fetches are only a last resort for seasons the snapshot lacks.
 REMEMBER_DATA_FILE = Path(__file__).resolve().parents[1] / "data" / "remember_seasons.json"
+REMEMBER_DATA_URL = (
+    "https://raw.githubusercontent.com/thatsmyboye/philliestherapy/main/"
+    "projects/phillies-bot/data/remember_seasons.json"
+)
 REMEMBER_HITTING_FIELDS = ("plateAppearances", "avg", "obp", "slg", "homeRuns", "rbi")
 REMEMBER_PITCHING_FIELDS = ("inningsPitched", "era", "strikeOuts", "baseOnBalls")
+# After a failed load, wait this long before trying the file/download again.
+_REMEMBER_RETRY_SECONDS = 600
 
 _bundled_seasons: Optional[dict[str, list]] = None
+_bundle_error: Optional[str] = None
+_bundle_failed_at = 0.0
 
 
 def compact_remember_player(player: dict) -> list:
@@ -1100,17 +1110,58 @@ def _expand_remember_row(row: list) -> dict:
     }
 
 
+def _read_remember_file() -> dict[str, list]:
+    with open(REMEMBER_DATA_FILE, encoding="utf-8") as f:
+        seasons = json.load(f).get("seasons") or {}
+    if not seasons:
+        raise ValueError("file has no seasons")
+    return seasons
+
+
+def _download_remember_file() -> dict[str, list]:
+    """Fetch the snapshot from GitHub and save it locally for later restarts."""
+    data = _fetch_json(REMEMBER_DATA_URL)
+    seasons = data.get("seasons") or {}
+    if not seasons:
+        raise ValueError("downloaded file has no seasons")
+    try:
+        REMEMBER_DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = REMEMBER_DATA_FILE.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(REMEMBER_DATA_FILE)
+    except Exception as exc:
+        print(f"[remember] downloaded season data but couldn't save it: {exc}")
+    return seasons
+
+
 def load_bundled_remember_seasons() -> dict[str, list]:
-    """Return the bundled {season: [rows]} snapshot, or {} if it's missing or unreadable."""
-    global _bundled_seasons
-    if _bundled_seasons is None:
-        try:
-            with open(REMEMBER_DATA_FILE, encoding="utf-8") as f:
-                _bundled_seasons = json.load(f).get("seasons", {})
-        except Exception as exc:
-            print(f"[remember] could not load {REMEMBER_DATA_FILE.name}: {exc}")
-            _bundled_seasons = {}
-    return _bundled_seasons
+    """
+    Return the bundled {season: [rows]} snapshot: the local file, else a copy
+    downloaded from GitHub. Returns {} (and retries after a cool-down) if both
+    fail; the reason is kept in _bundle_error.
+    """
+    global _bundled_seasons, _bundle_error, _bundle_failed_at
+    if _bundled_seasons is not None:
+        return _bundled_seasons
+    if _bundle_failed_at and time.time() - _bundle_failed_at < _REMEMBER_RETRY_SECONDS:
+        return {}
+
+    try:
+        _bundled_seasons = _read_remember_file()
+        return _bundled_seasons
+    except Exception as exc:
+        local_error = f"{REMEMBER_DATA_FILE} unreadable ({exc})"
+        print(f"[remember] {local_error}; downloading from GitHub")
+
+    try:
+        _bundled_seasons = _download_remember_file()
+        print(f"[remember] downloaded {len(_bundled_seasons)} seasons from GitHub")
+        return _bundled_seasons
+    except Exception as exc:
+        _bundle_error = f"{local_error}; GitHub download failed ({exc})"
+        _bundle_failed_at = time.time()
+        print(f"[remember] {_bundle_error}")
+        return {}
 
 
 def get_phillies_season_player_stats(year: int) -> list[dict]:
@@ -1118,13 +1169,21 @@ def get_phillies_season_player_stats(year: int) -> list[dict]:
     Return every player who appeared for the Phillies in the given season, with
     their Phillies-only hitting and pitching lines.
 
-    Reads the bundled snapshot first; falls back to a live fetch (which raises
-    RuntimeError if the MLB Stats API can't be reached) for seasons it lacks.
+    Reads the bundled snapshot first; falls back to a live fetch for seasons it
+    lacks. Raises RuntimeError if neither source has the season.
     """
-    rows = load_bundled_remember_seasons().get(str(year))
+    seasons = load_bundled_remember_seasons()
+    rows = seasons.get(str(year))
     if rows is not None:
         return [_expand_remember_row(r) for r in rows]
-    return fetch_phillies_season_player_stats(year)
+    try:
+        return fetch_phillies_season_player_stats(year)
+    except RuntimeError as exc:
+        if not seasons:
+            raise RuntimeError(
+                f"season data unavailable: {_bundle_error}; live MLB fetch failed too ({exc})"
+            ) from exc
+        raise
 
 
 def fetch_phillies_season_player_stats(year: int) -> list[dict]:

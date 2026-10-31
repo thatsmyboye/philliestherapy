@@ -182,7 +182,7 @@ class RememberCog(commands.Cog, name="Remember"):
 
         if last_error is not None:
             # Discord message content is capped at 2000 characters.
-            msg = f"Couldn't reach the MLB Stats API: `{last_error[:1500]}`"
+            msg = f"Couldn't load Phillies stats: `{last_error[:1500]}`"
         elif year is not None:
             msg = f"No stats found for the **{year} Phillies**. Try another year."
         else:
