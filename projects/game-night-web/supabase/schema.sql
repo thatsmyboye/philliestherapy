@@ -115,6 +115,7 @@ end $$;
 create or replace function gn_claim_seat(p_user uuid, p_episode int)
 returns text
 language plpgsql
+set search_path = public
 as $$
 declare
     ep      gn_episodes%rowtype;
@@ -135,6 +136,7 @@ begin
     return 'ok';
 end $$;
 revoke all on function gn_claim_seat(uuid, int) from public, anon, authenticated;
+grant execute on function gn_claim_seat(uuid, int) to service_role;
 
 -- Hot Stove League, per the rulebook. Dates are set from /admin.
 insert into gn_episodes (season, number, title, theme, exec_seats) values
