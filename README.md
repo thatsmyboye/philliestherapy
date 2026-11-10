@@ -64,6 +64,13 @@ behind DataDome.
 
 ---
 
+### 3. **game-night-web** — Game Night web app
+The members' side of the Phillies Therapy Game Night stream: Patreon sign-in for tier, a required Discord link, live play-along with every question, Executive Producer seat claims, and public standings. Next.js on Vercel with Supabase; the stream overlay pushes questions to it.
+
+See `projects/game-night-web/README.md` for setup.
+
+---
+
 ## Cost
 
 $0 for all projects. GitHub Actions free tier includes 2,000 min/month; the monitor uses ~1 min/month.
